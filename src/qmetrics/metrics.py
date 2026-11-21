@@ -17,7 +17,6 @@ NEST = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.T
 FN = (ast.FunctionDef, ast.AsyncFunctionDef)
 WIN = 6
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
-TEST_DEF = r"^{}\s*(?:async\s+)?def test_"
 
 
 def prefix_of(path):
@@ -114,11 +113,11 @@ def hunks(git, base, head, path):
             for a, b, c, d in HUNK.findall(diff.decode("utf-8", "replace"))]
 
 
-def count_tests(git, base, head, path):
-    diff = git.out("diff", *DIFF_OPTS, "-U0", base, head, "--", ":(literal)" + path)
-    text = diff.decode("utf-8", "replace")
-    return (len(re.findall(TEST_DEF.format(r"\+"), text, re.M))
-            - len(re.findall(TEST_DEF.format("-"), text, re.M)))
+def count_tests(tree):
+    """Number of functions named test_* (methods and nested defs included) in a module."""
+    if tree is None:
+        return 0
+    return sum(1 for n in ast.walk(tree) if isinstance(n, FN) and n.name.startswith("test_"))
 
 
 def analyze(git, base, head, src, tests):
@@ -129,7 +128,11 @@ def analyze(git, base, head, src, tests):
     tests_changed = [f for f in names if f.startswith(tp)]
 
     tb, th = list_tree(git, base, sp), list_tree(git, head, sp)
-    texts = git.read_blobs(list(tb.values()) + list(th.values()))
+    tests_py = [f for f in tests_changed if f.endswith(".py")]
+    ttb, tth = (list_tree(git, base, tp), list_tree(git, head, tp)) if tests_py else ({}, {})
+    texts = git.read_blobs(list(tb.values()) + list(th.values())
+                           + [ttb[f] for f in tests_py if f in ttb]
+                           + [tth[f] for f in tests_py if f in tth])
     cache = {}
 
     def tree_of(sha):
@@ -154,19 +157,26 @@ def analyze(git, base, head, src, tests):
         still_shape |= (before_shapes & after_shapes) - {None}
 
     events, failures = [], []
+    for f in sorted(set(tb) | set(th)):  # every parsed source blob, changed or reference
+        for side, shas in (("base", tb), ("head", th)):
+            if f in shas and not tree_of(shas[f])[1]:
+                failures.append({"file": f, "side": side, "scope": "src"})
+    changed_failed = {x["file"] for x in failures} & set(src_changed)
     code_change = False
     for f in src_changed:
         sb, sa = tb.get(f), th.get(f)
         pb, okb = tree_of(sb) if sb else (None, True)
         pa, oka = tree_of(sa) if sa else (None, True)
         if not (okb and oka):
-            failures += [{"file": f, "side": s} for s, ok in (("base", okb), ("head", oka)) if not ok]
-            continue  # undetermined: no guessing
+            continue  # undetermined: no guessing, no events
         if (pb is None) != (pa is None) or (
                 pb is not None and ast.dump(pb, include_attributes=False)
                 != ast.dump(pa, include_attributes=False)):
             code_change = True
-        if sa is None:
+        if sa is None:  # whole file deleted: every function is a changed function
+            for k, (s, e, _, _) in sorted(funcs(pb).items()):
+                events.append({"file": f, "function": k[0], "kind": "changed_function",
+                               "before": e - s + 1, "after": 0})
             continue
         after, before = text_of(sa), text_of(sb)
         n_after, n_before = len(lines_of(after)), len(lines_of(before))
@@ -193,6 +203,10 @@ def analyze(git, base, head, src, tests):
                 events.append({**ev, "kind": "grew_over50", "before": pl, "after": ln})
             if k not in fb and sh is not None and sh in still_shape:
                 events.append({**ev, "kind": "ast_dup", "before": 0, "after": ln})
+        for k, (s, e, _, _) in sorted(fb.items()):
+            if k not in fa:  # function deleted from a file that stays
+                events.append({"file": f, "function": k[0], "kind": "changed_function",
+                               "before": e - s + 1, "after": 0})
         alines = lines_of(after)
         dup = 0
         for a, b, c, d in hs:
@@ -202,8 +216,19 @@ def analyze(git, base, head, src, tests):
             events.append({"file": f, "function": None, "kind": "dup_windows",
                            "before": 0, "after": dup})
 
+    net_tests = 0
+    for f in tests_py:
+        for side, shas in (("base", ttb), ("head", tth)):
+            if f in shas and not tree_of(shas[f])[1]:
+                failures.append({"file": f, "side": side, "scope": "tests"})
+        net_tests += (count_tests(tree_of(tth[f])[0] if f in tth else None)
+                      - count_tests(tree_of(ttb[f])[0] if f in ttb else None))
     events.sort(key=lambda e: (e["file"], e["kind"], e["function"] or "", e["before"], e["after"]))
-    failures.sort(key=lambda x: (x["file"], x["side"]))
+    failures.sort(key=lambda x: (x["file"], x["side"], x["scope"]))
+    src_unknown = any(x["scope"] == "src" for x in failures)
+    tests_unknown = any(x["scope"] == "tests" for x in failures)
+    if code_change is False and changed_failed:
+        code_change = None
 
     def total(kind):
         return sum(e["after"] if kind == "dup_windows" else 1 for e in events if e["kind"] == kind)
@@ -216,14 +241,17 @@ def analyze(git, base, head, src, tests):
     }
     counts["smell_events"] = (counts["crossing_50"] + counts["crossing_depth4"]
                               + counts["dup_windows"] + counts["crossing_1000"] + counts["ast_dup"])
-    net_tests = sum(count_tests(git, base, head, f) for f in tests_changed if f.endswith(".py"))
+    grew = sum(1 for e in events if e["kind"] == "grew_over50")
+    if src_unknown:  # undetermined: null, never a made-up 0
+        counts = dict.fromkeys(counts)
+        grew = None
     return {
         "applicable": bool(tb or th),
         "code_change": code_change,
         "counts": counts,
         "events": events,
-        "grew_over50": sum(1 for e in events if e["kind"] == "grew_over50"),
-        "net_new_tests": net_tests,
+        "grew_over50": grew,
+        "net_new_tests": None if tests_unknown else net_tests,
         "parse_failures": failures,
         "tests_touched": bool(tests_changed),
     }

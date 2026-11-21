@@ -74,23 +74,32 @@ def render_json(report):
     return json.dumps(report, sort_keys=True, indent=2) + "\n"
 
 
+def show(v):
+    if v is None:
+        return "unknown"
+    return str(v).lower() if isinstance(v, bool) else str(v)
+
+
 def render_summary(r):
     out = [f"qmetrics {r['tool_version']} (schema {r['schema_version']}, python {r['python_version']},"
            f" git {r['git_version']})",
            f"base {r['base']} ({r['basis']})", f"head {r['head']}"]
+    if r["parse_failures"]:
+        out.append(f"INCOMPLETE: {len(r['parse_failures'])} parse failure(s); null values are"
+                   " undetermined, listed events are a lower bound")
     if not r["applicable"]:
         out.append(f"not applicable: no .py files under {r['src']}")
     else:
-        out.append(f"code_change: {str(r['code_change']).lower()}")
-        out += [f"{k}: {v}" for k, v in sorted(r["counts"].items())]
-        out.append(f"grew_over50: {r['grew_over50']}")
+        out.append(f"code_change: {show(r['code_change'])}")
+        out += [f"{k}: {show(v)}" for k, v in sorted(r["counts"].items())]
+        out.append(f"grew_over50: {show(r['grew_over50'])}")
         for e in r["events"]:
             if e["kind"] != "changed_function":
                 out.append(f"  {e['kind']} {e['file']} {e['function'] or '-'} {e['before']} -> {e['after']}")
     out.append(f"tests_touched: {str(r['tests_touched']).lower()}")
-    out.append(f"net_new_tests: {r['net_new_tests']}")
+    out.append(f"net_new_tests: {show(r['net_new_tests'])}")
     for f in r["parse_failures"]:
-        out.append(f"parse_failure ({f['side']}): {f['file']} -> undetermined")
+        out.append(f"parse_failure ({f['scope']}, {f['side']}): {f['file']} -> undetermined")
     out += [f"warning: {w}" for w in r["warnings"]]
     return "\n".join(out) + "\n"
 
