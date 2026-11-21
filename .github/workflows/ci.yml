@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run python -I -m pytest -q
+
+  quality:
+    # workflow_dispatch has no diff to measure, so only PRs and pushes are measured.
+    if: github.event_name != 'workflow_dispatch'
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+    with:
+      python-version: "3.12"
