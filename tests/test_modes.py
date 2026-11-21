@@ -1,0 +1,114 @@
+"""Modes, code_change, parse failures, not-applicable."""
+import json
+
+
+def test_real_merge_commit_uses_first_parent(make_repo, qm):
+    repo = make_repo()
+    repo.commit({"src/a.py": "x = 0\n"}, "base")
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.commit({"src/f.py": "def f():\n    return 1\n"}, "feature")
+    repo.git("checkout", "-q", "main")
+    main_tip = repo.commit({"src/a.py": "x = 1\n"}, "main moves")
+    repo.git("merge", "-q", "--no-ff", "-m", "merge", "feature")
+    merge = repo.git("rev-parse", "HEAD")
+    d = qm(repo.path, "--merge", merge).data()
+    assert (d["basis"], d["base"], d["head"]) == ("first_parent", main_tip, merge)
+    assert d["code_change"] is True
+
+
+def test_pr_mode_uses_merge_base(make_repo, qm):
+    repo = make_repo()
+    fork = repo.commit({"src/a.py": "x = 0\n"}, "base")
+    repo.git("checkout", "-q", "-b", "feature")
+    head = repo.commit({"src/f.py": "def f():\n    return 1\n"}, "feature")
+    repo.git("checkout", "-q", "main")
+    repo.commit({"src/a.py": "x = 1\n"}, "main moves")
+    d = qm(repo.path, "--pr-base", "main", "--pr-head", "feature").data()
+    assert (d["basis"], d["base"], d["head"]) == ("merge_base", fork, head)
+    assert d["counts"]["changed_fns"] == 1
+
+
+def test_comment_only_and_tests_only_are_not_code_changes(make_repo, qm):
+    repo = make_repo()
+    base = repo.commit({"src/a.py": "x = 0\n", "tests/test_a.py": "def test_one():\n    pass\n"}, "base")
+    c1 = repo.commit({"src/a.py": "x = 0  # note\n"}, "comment")
+    c2 = repo.commit({"tests/test_a.py": "def test_one():\n    pass\n\n\ndef test_two():\n    pass\n"}, "tests")
+    assert qm(repo.path, "--base", base, "--head", c1).data()["code_change"] is False
+    d = qm(repo.path, "--base", c1, "--head", c2).data()
+    assert (d["code_change"], d["tests_touched"], d["net_new_tests"]) == (False, True, 1)
+
+
+def test_src_and_tests_options(make_repo, qm):
+    repo = make_repo()
+    base = repo.commit({"lib/a.py": "x = 0\n", "t/test_a.py": "def test_one():\n    pass\n"}, "base")
+    head = repo.commit({"lib/a.py": "x = 1\n", "t/test_a.py": "def test_one():\n    pass\n\ndef test_two():\n    pass\n"})
+    d = qm(repo.path, "--base", base, "--head", head, "--src", "lib", "--tests", "t").data()
+    assert (d["code_change"], d["net_new_tests"], d["applicable"]) == (True, 1, True)
+
+
+def test_unparsable_file_is_listed_not_guessed(make_repo, qm):
+    repo = make_repo()
+    fine = "def f():\n    return 1\n"
+    base = repo.commit({"src/ok.py": fine, "src/bad.py": "def g(:\n"}, "base")
+    head = repo.commit({"src/ok.py": fine + "\n\ndef h():\n    return 2\n", "src/bad.py": "def g(:\n    pass\n"})
+    d = qm(repo.path, "--base", base, "--head", head).data()
+    assert d["parse_failures"] == [{"file": "src/bad.py", "side": "base"},
+                                   {"file": "src/bad.py", "side": "head"}]
+    assert {e["file"] for e in d["events"]} == {"src/ok.py"}
+    assert d["code_change"] is True  # decided by the parsable file only
+
+
+def test_unparsable_only_gives_no_code_change(make_repo, qm):
+    repo = make_repo()
+    base = repo.commit({"src/bad.py": "def g(:\n"}, "base")
+    head = repo.commit({"src/bad.py": "def g(:\n    pass\n"})
+    d = qm(repo.path, "--base", base, "--head", head).data()
+    assert d["code_change"] is False and len(d["parse_failures"]) == 2
+    assert d["events"] == []
+
+
+def test_no_python_under_src_is_not_applicable(make_repo, qm):
+    repo = make_repo()
+    base = repo.commit({"src/a.js": "var a = 1;\n"}, "base")
+    head = repo.commit({"src/a.js": "var a = 2;\n"})
+    r = qm(repo.path, "--base", base, "--head", head)
+    assert r.rc == 0
+    assert r.data()["applicable"] is False and r.data()["code_change"] is False
+
+
+def test_summary_output_without_json_flag(make_repo):
+    import subprocess, sys, os
+    repo = make_repo()
+    base = repo.commit({"src/a.py": "x = 0\n"}, "base")
+    head = repo.commit({"src/a.py": "x = 1\n"})
+    proc = subprocess.run([sys.executable, "-m", "qmetrics", "diff", "--base", base, "--head", head],
+                          cwd=repo.path, capture_output=True, text=True)
+    assert proc.returncode == 0
+    assert "code_change: true" in proc.stdout and not proc.stdout.lstrip().startswith("{")
+
+
+def test_crossing_1000_and_depth_events(make_repo, qm):
+    repo = make_repo()
+    deep = "def d(a):\n    if a:\n        for i in a:\n            while i:\n                if i:\n                    return 1\n"
+    base = repo.commit({"src/big.py": "x = 1\n" * 999, "src/d.py": "def d(a):\n    return a\n"}, "base")
+    head = repo.commit({"src/big.py": "x = 1\n" * 1001, "src/d.py": deep})
+    d = qm(repo.path, "--base", base, "--head", head).data()
+    assert d["counts"]["crossing_1000"] == 1
+    assert d["counts"]["crossing_depth4"] == 1
+    assert d["counts"]["smell_events"] == 2
+    ev = [e for e in d["events"] if e["kind"] == "crossing_1000"][0]
+    assert (ev["file"], ev["before"], ev["after"]) == ("src/big.py", 999, 1001)
+
+
+def test_grew_over50_is_reported_only(make_repo, qm):
+    repo = make_repo()
+
+    def f(n):
+        return "def f():\n" + "".join(f"    v{i} = {i}\n" for i in range(n))
+
+    base = repo.commit({"src/f.py": f(60)}, "base")
+    head = repo.commit({"src/f.py": f(115)})
+    d = qm(repo.path, "--base", base, "--head", head).data()
+    assert d["grew_over50"] == 1
+    assert d["counts"]["smell_events"] == 0
+    assert json.dumps(d)  # plain data

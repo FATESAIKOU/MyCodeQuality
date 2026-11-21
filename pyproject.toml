@@ -1,0 +1,20 @@
+[project]
+name = "qmetrics"
+version = "0.1.0"
+description = "Deterministic static quality metrics for a git diff (stdlib only, no LLM)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+qmetrics = "qmetrics.cli:main"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.14"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
