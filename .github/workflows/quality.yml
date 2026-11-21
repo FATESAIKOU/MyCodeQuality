@@ -1,0 +1,78 @@
+# Reusable workflow: deterministic diff metrics (qmetrics), report-only (Q0).
+# The job fails only when the tool itself errors (qmetrics exit != 0), never on the metric values.
+name: quality
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: Python minor version to pin. The AST-based metrics can differ across versions.
+        type: string
+        default: "3.12"
+      src:
+        description: Source directory to measure.
+        type: string
+        default: src
+      tests:
+        description: Test directory.
+        type: string
+        default: tests
+      qmetrics-ref:
+        description: >-
+          Git ref (tag or commit SHA recommended) of FATESAIKOU/MyCodeQuality to install.
+          Pin it so the same inputs keep producing the same numbers; "main" moves.
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  qmetrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history: a shallow clone is reported as a tool error
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install qmetrics
+        env:
+          QMETRICS_REF: ${{ inputs.qmetrics-ref }}
+        run: python -m pip install "git+https://github.com/FATESAIKOU/MyCodeQuality.git@${QMETRICS_REF}"
+
+      - name: Measure
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          SRC: ${{ inputs.src }}
+          TESTS: ${{ inputs.tests }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push) mode=(--merge "$SHA") ;;
+            pull_request) mode=(--pr-base "$PR_BASE" --pr-head "$PR_HEAD") ;;
+            *) echo "unsupported event: $EVENT_NAME (use push or pull_request)" >&2; exit 2 ;;
+          esac
+          qmetrics diff "${mode[@]}" --src "$SRC" --tests "$TESTS" --json > qmetrics.json
+          qmetrics diff "${mode[@]}" --src "$SRC" --tests "$TESTS" > qmetrics.txt
+          {
+            echo "### qmetrics (report only)"
+            echo '```'
+            cat qmetrics.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: qmetrics
+          path: qmetrics.json
+          if-no-files-found: ignore
