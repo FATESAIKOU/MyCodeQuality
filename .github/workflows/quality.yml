@@ -1,5 +1,6 @@
 # Reusable workflow: deterministic diff metrics (qmetrics), report-only (Q0).
-# The job fails only when the tool itself errors (qmetrics exit != 0), never on the metric values.
+# Metric values never fail the job. It fails on tool errors (qmetrics exit != 0) and infrastructure
+# errors (checkout, pip install, file redirection, step summary, artifact upload).
 name: quality
 
 on:
@@ -19,8 +20,8 @@ on:
         default: tests
       qmetrics-ref:
         description: >-
-          Git ref (tag or commit SHA recommended) of FATESAIKOU/MyCodeQuality to install.
-          Pin it so the same inputs keep producing the same numbers; "main" moves.
+          Git ref of FATESAIKOU/MyCodeQuality to install. Pin a tag or commit SHA (recommended):
+          the default "main" moves, so the same inputs can produce different numbers later.
         type: string
         default: main
 
