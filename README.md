@@ -20,7 +20,7 @@ jobs:
       python-version: "3.12"   # pin: AST output can differ between minor versions
       src: src
       tests: tests
-      qmetrics-ref: main       # replace with a tag or commit SHA
+      qmetrics-ref: <full commit SHA>  # pin: "main" moves, so the same inputs can give different numbers
 ```
 
-The workflow checks out the full history (`fetch-depth: 0`; a shallow clone is a tool error), runs `qmetrics diff`, writes a summary to the job summary and uploads `qmetrics.json`. It only reports: the job fails only if qmetrics itself errors. Python projects only for now.
+The workflow checks out the full history (`fetch-depth: 0`; a shallow clone is a tool error), runs `qmetrics diff`, writes a summary to the job summary and uploads `qmetrics.json`. It only reports: metric values never fail the job. It fails on tool errors (qmetrics exits non-zero) and infrastructure errors (checkout, pip install, file redirection, step summary, artifact upload). Python projects only for now.
