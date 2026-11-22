@@ -1,5 +1,5 @@
 # Reusable workflow: deterministic diff metrics (qmetrics), report-only (Q0).
-# Metric values never fail the job. It fails on tool errors (qmetrics exit != 0) and infrastructure
+# Metric values never fail the job unless the caller opts in with fail-on: q1. It fails on tool errors (qmetrics exit != 0) and infrastructure
 # errors (checkout, pip install, file redirection, step summary, artifact upload).
 name: quality
 
@@ -24,6 +24,13 @@ on:
           the default "main" moves, so the same inputs can produce different numbers later.
         type: string
         default: main
+      fail-on:
+        description: >-
+          "none" (default) only reports. "q1" also fails pull_request runs when a file crosses 1000 lines
+          or a new function has the same AST as an existing one (or either is undetermined), unless the
+          PR has the label quality:arch-ok.
+        type: string
+        default: none
 
 permissions:
   contents: read
@@ -77,3 +84,9 @@ jobs:
           name: qmetrics
           path: qmetrics.json
           if-no-files-found: ignore
+
+      - name: Gate (Q1)
+        if: ${{ inputs.fail-on == 'q1' && github.event_name == 'pull_request' }}
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: qmetrics gate --file qmetrics.json --event pull_request --labels-json "$LABELS"

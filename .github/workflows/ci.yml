@@ -2,6 +2,7 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -28,3 +29,6 @@ jobs:
       contents: read
     with:
       python-version: "3.12"
+      fail-on: q1
+      # this repo measures itself with the version under test (same-repo PRs and pushes; a fork PR falls back to main because a fork SHA may not be fetchable)
+      qmetrics-ref: ${{ github.event_name == 'push' && github.sha || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || 'main') }}
