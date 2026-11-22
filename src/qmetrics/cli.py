@@ -5,7 +5,7 @@ import json
 import sys
 
 from qmetrics import SCHEMA_VERSION, __version__
-from qmetrics import gitio, metrics
+from qmetrics import gate, gitio, metrics
 
 EXIT_TOOL_ERROR = 2
 
@@ -23,6 +23,10 @@ def build_parser():
     d.add_argument("--src", default="src")
     d.add_argument("--tests", default="tests")
     d.add_argument("--json", action="store_true", help="print the JSON report instead of the summary")
+    g = sub.add_parser("gate", help="Q1: fail on crossing_1000 / ast_dup unless labeled quality:arch-ok")
+    g.add_argument("--file", required=True, help="JSON report from `qmetrics diff --json`")
+    g.add_argument("--event", required=True, help="GitHub event name; only pull_request is judged")
+    g.add_argument("--labels-json", default="[]", help="JSON array of PR label names (default: [])")
     return p
 
 
@@ -106,6 +110,14 @@ def render_summary(r):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.cmd == "gate":
+        try:
+            rc, lines = gate.decide(args.file, args.event, args.labels_json)
+        except gitio.ToolError as e:
+            print(f"qmetrics: error {e.code}: {e.message}", file=sys.stderr)
+            return EXIT_TOOL_ERROR
+        sys.stdout.write("\n".join(lines) + "\n")
+        return rc
     try:
         report = run_diff(args)
     except gitio.ToolError as e:
