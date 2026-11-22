@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import sys
 
 from qmetrics import SCHEMA_VERSION, __version__
@@ -108,20 +109,25 @@ def render_summary(r):
     return "\n".join(out) + "\n"
 
 
+def _one_line(text):
+    """Tool errors are one stderr line: escape control characters (a path may contain a newline)."""
+    return re.sub(r"[\x00-\x1f\x7f]", lambda m: repr(m.group())[1:-1], text)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.cmd == "gate":
         try:
             rc, lines = gate.decide(args.file, args.event, args.labels_json)
         except gitio.ToolError as e:
-            print(f"qmetrics: error {e.code}: {e.message}", file=sys.stderr)
+            print(f"qmetrics: error {e.code}: {_one_line(e.message)}", file=sys.stderr)
             return EXIT_TOOL_ERROR
         sys.stdout.write("\n".join(lines) + "\n")
         return rc
     try:
         report = run_diff(args)
     except gitio.ToolError as e:
-        print(f"qmetrics: error {e.code}: {e.message}", file=sys.stderr)
+        print(f"qmetrics: error {e.code}: {_one_line(e.message)}", file=sys.stderr)
         return EXIT_TOOL_ERROR
     sys.stdout.write(render_json(report) if args.json else render_summary(report))
     return 0

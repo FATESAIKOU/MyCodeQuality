@@ -102,3 +102,11 @@ def test_bad_label_input_even_with_zero_counts_is_error_but_ok_on_push(tmp_path)
 def test_deterministic(tmp_path):
     a, b = gate(tmp_path, rep(c=1), labels=[]), gate(tmp_path, rep(c=1), labels=[])
     assert (a.stdout, a.stderr, a.returncode) == (b.stdout, b.stderr, b.returncode)
+
+
+def test_tool_error_stays_one_line_when_the_path_has_a_newline(tmp_path):
+    r = subprocess.run([sys.executable, "-I", "-m", "qmetrics", "gate", "--file", "missing\nname",
+                        "--event", "pull_request"], capture_output=True, text=True)
+    assert r.returncode == 2
+    assert r.stdout == ""
+    assert len(r.stderr.strip().splitlines()) == 1, r.stderr
