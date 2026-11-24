@@ -103,8 +103,8 @@ def detect_rework(
         r"(?i)(?:^|[\s\W]|(?<=[\u4e00-\u9fff]))(?P<kw>" + kw_pat + r")(?::)?\s*" + ref_pat
     )
 
-    # Pre-index ticket_prs by id
-    prs_by_id = {p["id"]: p for p in ticket_prs}
+    # Pre-index ticket_prs by lowercase id
+    prs_by_id = {p["id"].lower(): p for p in ticket_prs}
 
     for m in pattern.finditer(text):
         if m.group("url_num"):
@@ -117,7 +117,7 @@ def detect_rework(
             repo = pr_repo
             num = int(m.group("short_num"))
 
-        target_id = f"{repo}#{num}"
+        target_id = f"{repo.lower()}#{num}"
         target_pr = prs_by_id.get(target_id)
         if target_pr and target_pr.get("merged_at"):
             if target_pr["merged_at"] < created_at:

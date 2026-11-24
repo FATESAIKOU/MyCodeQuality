@@ -185,72 +185,72 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     prs_open = sum(1 for p in pr_results if p["state"] == "open")
     prs_closed_unmerged = sum(1 for p in pr_results if p["state"] == "closed_unmerged")
     unreviewed_merged_prs = sum(
-        1 for p in pr_results if p["state"] == "merged" and (p["verdicts"] is None or p["verdicts"] == 0)
+        1 for p in pr_results if p["state"] == "merged" and p["verdicts"] == 0
     )
     prs_without_ci = sum(
         1 for p in pr_results if p["state"] == "merged" and p["ci_first_head"] is None
     )
 
     merged_prs = [p for p in pr_results if p["state"] == "merged"]
-    reviewed_merged = [p for p in merged_prs if p["verdicts"] is not None and p["verdicts"] > 0]
+    candidate_merged = [p for p in merged_prs if p["verdicts"] != 0]
 
     # review_first_pass
     if len(merged_prs) == 0:
         review_first_pass = None
         metric_missing["review_first_pass"] = "no_merged_pr"
-    elif len(reviewed_merged) == 0:
+    elif len(candidate_merged) == 0:
         review_first_pass = None
         metric_missing["review_first_pass"] = "no_verdict"
-    elif any(p["first_review_pass"] is None for p in reviewed_merged):
+    elif any(p["first_review_pass"] is None for p in candidate_merged):
         review_first_pass = None
-        null_p = next(p for p in reviewed_merged if p["first_review_pass"] is None)
+        null_p = next(p for p in candidate_merged if p["first_review_pass"] is None)
         metric_missing["review_first_pass"] = pr_missing_map[null_p["pr"]]["first_review_pass"]
     else:
-        num = sum(1 for p in reviewed_merged if p["first_review_pass"] is True)
-        den = len(reviewed_merged)
+        num = sum(1 for p in candidate_merged if p["first_review_pass"] is True)
+        den = len(candidate_merged)
         review_first_pass = {"num": num, "den": den}
 
     # fix_rounds
     if len(merged_prs) == 0:
         fix_rounds = None
         metric_missing["fix_rounds"] = "no_merged_pr"
-    elif len(reviewed_merged) == 0:
+    elif len(candidate_merged) == 0:
         fix_rounds = None
         metric_missing["fix_rounds"] = "no_verdict"
-    elif any(p["fix_rounds"] is None for p in reviewed_merged):
+    elif any(p["fix_rounds"] is None for p in candidate_merged):
         fix_rounds = None
-        null_p = next(p for p in reviewed_merged if p["fix_rounds"] is None)
+        null_p = next(p for p in candidate_merged if p["fix_rounds"] is None)
         metric_missing["fix_rounds"] = pr_missing_map[null_p["pr"]]["fix_rounds"]
     else:
-        fix_rounds = sum(p["fix_rounds"] for p in reviewed_merged)
+        fix_rounds = sum(p["fix_rounds"] for p in candidate_merged)
 
     # re_reviews
     if len(merged_prs) == 0:
         re_reviews = None
         metric_missing["re_reviews"] = "no_merged_pr"
-    elif len(reviewed_merged) == 0:
+    elif len(candidate_merged) == 0:
         re_reviews = None
         metric_missing["re_reviews"] = "no_verdict"
-    elif any(p["re_reviews"] is None for p in reviewed_merged):
+    elif any(p["re_reviews"] is None for p in candidate_merged):
         re_reviews = None
-        null_p = next(p for p in reviewed_merged if p["re_reviews"] is None)
+        null_p = next(p for p in candidate_merged if p["re_reviews"] is None)
         metric_missing["re_reviews"] = pr_missing_map[null_p["pr"]]["re_reviews"]
     else:
-        re_reviews = sum(p["re_reviews"] for p in reviewed_merged)
+        re_reviews = sum(p["re_reviews"] for p in candidate_merged)
 
     # approved_head_stale
     if len(merged_prs) == 0:
         approved_head_stale = None
         metric_missing["approved_head_stale"] = "no_merged_pr"
-    elif len(reviewed_merged) == 0:
+    elif len(candidate_merged) == 0:
         approved_head_stale = None
         metric_missing["approved_head_stale"] = "no_verdict"
-    elif any(p["approved_head_stale"] is None for p in reviewed_merged):
+    elif any(p["approved_head_stale"] is None for p in candidate_merged):
         approved_head_stale = None
-        null_p = next(p for p in reviewed_merged if p["approved_head_stale"] is None)
+        null_p = next(p for p in candidate_merged if p["approved_head_stale"] is None)
         metric_missing["approved_head_stale"] = pr_missing_map[null_p["pr"]]["approved_head_stale"]
     else:
-        approved_head_stale = sum(1 for p in reviewed_merged if p["approved_head_stale"] is True)
+        approved_head_stale = sum(1 for p in candidate_merged if p["approved_head_stale"] is True)
 
     # ci_first_green
     if any(p["ci_first_green"] is None and pr_missing_map[p["pr"]].get("ci_first_green") == "ci_incomplete" for p in merged_prs):

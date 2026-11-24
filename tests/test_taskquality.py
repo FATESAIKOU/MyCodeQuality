@@ -657,6 +657,44 @@ def test_c_b5_review_first_pass(tmp_path):
     assert m["review_first_pass"] == {"num": 1, "den": 2}
     assert m["unreviewed_merged_prs"] == 1
 
+    # v1 is other -> PR first_review_pass and ticket review_first_pass are null, missing has unrecognized_verdict
+    snap_other = {
+        "kind": "taskquality-snapshot",
+        "schema_version": 1,
+        "ticket": "acme/widgets#11",
+        "prs": [
+            {
+                "id": "acme/widgets#1",
+                "title": "Closes #11",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T03:00:00Z",
+                "head_sha": "a" * 40,
+                "comments": [
+                    {"id": 1, "created_at": "2030-01-01T01:30:00Z", "first_line": "審查：m 結論：未知狀態（head aaaaaaa）"},
+                ],
+                "reviews": [],
+                "ci_runs": [],
+            }
+        ],
+    }
+    p_other = tmp_path / "snap_other.json"
+    p_other.write_text(json.dumps(snap_other))
+    proc_other = run_tq("score", "--snapshot", str(p_other), "--json")
+    assert proc_other.returncode == 0
+    res_other = json.loads(proc_other.stdout)
+    assert res_other["prs"][0]["first_review_pass"] is None
+    assert res_other["metrics"]["review_first_pass"] is None
+    assert any(
+        m["field"] == "prs[acme/widgets#1].first_review_pass" and m["reason"] == "unrecognized_verdict"
+        for m in res_other["missing"]
+    )
+    assert any(
+        m["field"] == "metrics.review_first_pass" and m["reason"] == "unrecognized_verdict"
+        for m in res_other["missing"]
+    )
+
 
 # Contract C-B6: re_reviews and approved_head_stale
 def test_c_b6_re_reviews_and_stale_head(tmp_path):
@@ -752,6 +790,58 @@ def test_c_b7_ci_first_green(tmp_path):
     assert pr1["ci_first_head"] == "headA" + "0" * 35
     assert pr1["ci_first_green"] is True
 
+    # CI runs order reversed -> byte-identical output
+    snap_rev = copy.deepcopy(snap)
+    snap_rev["prs"][0]["ci_runs"].reverse()
+    p_rev = tmp_path / "snap_rev.json"
+    p_rev.write_text(json.dumps(snap_rev))
+    proc_rev = run_tq("score", "--snapshot", str(p_rev), "--json")
+    assert proc_rev.returncode == 0
+    assert proc_rev.stdout == proc.stdout
+
+    # ci_incomplete: run on first head is in_progress
+    snap_incomp = copy.deepcopy(snap)
+    snap_incomp["prs"][0]["ci_runs"] = [
+        {"run_id": 10, "workflow": "ci", "head_sha": "headA" + "0" * 35, "run_attempt": 1, "created_at": "2030-01-01T01:10:00Z", "status": "in_progress", "conclusion": None}
+    ]
+    p_incomp = tmp_path / "snap_incomp.json"
+    p_incomp.write_text(json.dumps(snap_incomp))
+    proc_incomp = run_tq("score", "--snapshot", str(p_incomp), "--json")
+    assert proc_incomp.returncode == 0
+    res_incomp = json.loads(proc_incomp.stdout)
+    assert res_incomp["prs"][0]["ci_first_green"] is None
+    assert res_incomp["metrics"]["ci_first_green"] is None
+    assert any(
+        m["field"] == "prs[acme/widgets#1].ci_first_green" and m["reason"] == "ci_incomplete"
+        for m in res_incomp["missing"]
+    )
+    assert any(
+        m["field"] == "metrics.ci_first_green" and m["reason"] == "ci_incomplete"
+        for m in res_incomp["missing"]
+    )
+
+    # prs_without_ci counting: PR1 has CI, PR2 does not
+    snap_no_ci = copy.deepcopy(snap)
+    snap_no_ci["prs"].append({
+        "id": "acme/widgets#2",
+        "title": "Closes #11",
+        "body": "",
+        "state": "closed",
+        "created_at": "2030-01-01T01:00:00Z",
+        "merged_at": "2030-01-01T05:00:00Z",
+        "head_sha": "b" * 40,
+        "comments": [{"id": 2, "created_at": "2030-01-01T02:00:00Z", "first_line": "審查：m 結論：可以 merge（head bbbbbbb）"}],
+        "reviews": [],
+        "ci_runs": [],
+    })
+    p_no_ci = tmp_path / "snap_no_ci.json"
+    p_no_ci.write_text(json.dumps(snap_no_ci))
+    proc_no_ci = run_tq("score", "--snapshot", str(p_no_ci), "--json")
+    assert proc_no_ci.returncode == 0
+    res_no_ci = json.loads(proc_no_ci.stdout)
+    assert res_no_ci["metrics"]["prs_without_ci"] == 1
+    assert res_no_ci["metrics"]["ci_first_green"] == {"num": 1, "den": 1}
+
 
 # Contract C-B8: Rework derivation
 def test_c_b8_rework_derivation(tmp_path):
@@ -819,6 +909,45 @@ def test_c_b8_rework_derivation(tmp_path):
     assert prs["acme/widgets#22"]["rework"] is True
     assert prs["acme/widgets#23"]["rework"] is False
     assert prs["acme/widgets#24"]["rework"] is False
+
+    # Case-insensitive owner/repo matching
+    snap_case = {
+        "kind": "taskquality-snapshot",
+        "schema_version": 1,
+        "ticket": "acme/widgets#11",
+        "prs": [
+            {
+                "id": "Acme/Widgets#21",
+                "title": "Initial",
+                "body": "Closes #11",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T02:00:00Z",
+                "head_sha": "a" * 40,
+                "comments": [],
+                "reviews": [],
+                "ci_runs": [],
+            },
+            {
+                "id": "acme/widgets#22",
+                "title": "Fix",
+                "body": "Closes #11\n修正 acme/widgets#21",
+                "state": "closed",
+                "created_at": "2030-01-01T03:00:00Z",
+                "merged_at": "2030-01-01T04:00:00Z",
+                "head_sha": "b" * 40,
+                "comments": [],
+                "reviews": [],
+                "ci_runs": [],
+            },
+        ],
+    }
+    p_case = tmp_path / "snap_case.json"
+    p_case.write_text(json.dumps(snap_case))
+    r_case = run_tq("score", "--snapshot", str(p_case), "--json")
+    assert r_case.returncode == 0
+    res_case = json.loads(r_case.stdout)
+    assert res_case["prs"][1]["rework"] is True
 
 
 # Contract C-B9: Cycle seconds and status
@@ -960,6 +1089,53 @@ def test_c_b9a_clean_flag(tmp_path):
     res4 = json.loads(r4.stdout)
     assert res4["clean"] is False
 
+    # Two merged PRs: one without verdict, one first pass -> clean is False
+    snap_two_prs = {
+        "kind": "taskquality-snapshot",
+        "schema_version": 1,
+        "ticket": "acme/widgets#11",
+        "prs": [
+            {
+                "id": "acme/widgets#1",
+                "title": "Closes #11",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T02:00:00Z",
+                "head_sha": "a" * 40,
+                "comments": [],
+                "reviews": [],
+                "ci_runs": [
+                    {"run_id": 1, "workflow": "ci", "head_sha": "a" * 40, "run_attempt": 1, "created_at": "2030-01-01T01:10:00Z", "status": "completed", "conclusion": "success"}
+                ],
+            },
+            {
+                "id": "acme/widgets#2",
+                "title": "Closes #11",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T02:00:00Z",
+                "head_sha": "b" * 40,
+                "comments": [
+                    {"id": 2, "created_at": "2030-01-01T01:30:00Z", "first_line": "審查：m 結論：可以 merge（head bbbbbbb）"}
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {"run_id": 2, "workflow": "ci", "head_sha": "b" * 40, "run_attempt": 1, "created_at": "2030-01-01T01:10:00Z", "status": "completed", "conclusion": "success"}
+                ],
+            },
+        ],
+    }
+    p_two = tmp_path / "snap_two.json"
+    p_two.write_text(json.dumps(snap_two_prs))
+    r_two = run_tq("score", "--snapshot", str(p_two), "--json")
+    assert r_two.returncode == 0
+    res_two = json.loads(r_two.stdout)
+    assert res_two["clean"] is False
+    assert res_two["metrics"]["unreviewed_merged_prs"] == 1
+    assert res_two["metrics"]["review_first_pass"] == {"num": 1, "den": 1}
+
 
 # Contract C-B10: Missing values & usage
 def test_c_b10_missing_and_usage(tmp_path):
@@ -974,6 +1150,72 @@ def test_c_b10_missing_and_usage(tmp_path):
     assert res["counters"] is None
     assert any(m["field"] == "usage" and m["reason"] == "input_missing" for m in res["missing"])
     assert any(m["field"] == "counters" and m["reason"] == "input_missing" for m in res["missing"])
+
+    # Usage with null token -> by_model and totals both null, missing has input_null
+    inp_null_token = {
+        "kind": "taskquality-input",
+        "schema_version": 1,
+        "ticket": "acme/widgets#11",
+        "usage": [
+            {
+                "pr": "acme/widgets#21",
+                "role": "impl",
+                "provider": "vendor",
+                "model": "model-y",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "cache_read_tokens": 200,
+                "cache_write_tokens": None,
+                "cost_micro_usd": 10000,
+            }
+        ],
+    }
+    p_inp_null = tmp_path / "inp_null_token.json"
+    p_inp_null.write_text(json.dumps(inp_null_token))
+    r_null_tok = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_inp_null), "--json")
+    assert r_null_tok.returncode == 0
+    res_tok = json.loads(r_null_tok.stdout)
+    assert res_tok["usage"]["by_model"][0]["cache_write_tokens"] is None
+    assert res_tok["usage"]["totals"]["cache_write_tokens"] is None
+    assert any(
+        m["field"] == "usage.by_model[vendor,model-y].cache_write_tokens" and m["reason"] == "input_null"
+        for m in res_tok["missing"]
+    )
+    assert any(
+        m["field"] == "usage.totals.cache_write_tokens" and m["reason"] == "input_null"
+        for m in res_tok["missing"]
+    )
+
+    # PR layer null propagates to metrics.<field> with same reason
+    inp_pr_null = {
+        "kind": "taskquality-input",
+        "schema_version": 1,
+        "ticket": "acme/widgets#11",
+        "prs": {
+            "acme/widgets#21": {
+                "verdicts": None,
+            }
+        },
+    }
+    p_inp_pr_null = tmp_path / "inp_pr_null.json"
+    p_inp_pr_null.write_text(json.dumps(inp_pr_null))
+    r_pr_null = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_inp_pr_null), "--json")
+    assert r_pr_null.returncode == 0
+    res_pr_null = json.loads(r_pr_null.stdout)
+    pr_entry = next(p for p in res_pr_null["prs"] if p["pr"] == "acme/widgets#21")
+    assert pr_entry["first_review_pass"] is None
+    assert pr_entry["fix_rounds"] is None
+    assert pr_entry["re_reviews"] is None
+    assert pr_entry["approved_head_stale"] is None
+    assert res_pr_null["metrics"]["review_first_pass"] is None
+    assert res_pr_null["metrics"]["fix_rounds"] is None
+    assert res_pr_null["metrics"]["re_reviews"] is None
+    assert res_pr_null["metrics"]["approved_head_stale"] is None
+    for field in ["review_first_pass", "fix_rounds", "re_reviews", "approved_head_stale"]:
+        assert any(
+            m["field"] == f"metrics.{field}" and m["reason"] == "input_null"
+            for m in res_pr_null["missing"]
+        )
 
 
 # Contract C-B11: Tool errors
@@ -1016,6 +1258,118 @@ def test_c_b11_tool_errors(tmp_path):
     p_cfg_bad_pat.write_text(json.dumps(cfg_bad_pat))
     r5 = run_tq("score", "--snapshot", str(p_snap), "--config", str(p_cfg_bad_pat))
     assert_tool_error(r5, "bad_pattern")
+
+    # Snapshot validation: review commit_id not string or empty
+    snap_bad_commit = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap_bad_commit["prs"][0]["reviews"] = [{"id": 1, "submitted_at": "2030-01-02T04:55:00Z", "state": "APPROVED", "commit_id": 123}]
+    p_bad_commit = tmp_path / "bad_commit.json"
+    p_bad_commit.write_text(json.dumps(snap_bad_commit))
+    r_bad_c = run_tq("score", "--snapshot", str(p_bad_commit))
+    assert_tool_error(r_bad_c, "snapshot_bad_shape")
+
+    snap_empty_commit = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap_empty_commit["prs"][0]["reviews"] = [{"id": 1, "submitted_at": "2030-01-02T04:55:00Z", "state": "APPROVED", "commit_id": ""}]
+    p_empty_c = tmp_path / "empty_commit.json"
+    p_empty_c.write_text(json.dumps(snap_empty_commit))
+    r_empty_c = run_tq("score", "--snapshot", str(p_empty_c))
+    assert_tool_error(r_empty_c, "snapshot_bad_shape")
+
+    # Snapshot validation: ci_run run_attempt missing, not int, or bool
+    snap_no_attempt = copy.deepcopy(GOLDEN_SNAPSHOT)
+    del snap_no_attempt["prs"][0]["ci_runs"][0]["run_attempt"]
+    p_no_att = tmp_path / "no_attempt.json"
+    p_no_att.write_text(json.dumps(snap_no_attempt))
+    r_no_att = run_tq("score", "--snapshot", str(p_no_att))
+    assert_tool_error(r_no_att, "snapshot_bad_shape")
+
+    snap_bool_attempt = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap_bool_attempt["prs"][0]["ci_runs"][0]["run_attempt"] = True
+    p_bool_att = tmp_path / "bool_attempt.json"
+    p_bool_att.write_text(json.dumps(snap_bool_attempt))
+    r_bool_att = run_tq("score", "--snapshot", str(p_bool_att))
+    assert_tool_error(r_bool_att, "snapshot_bad_shape")
+
+    # Input validation: input.prs PR id bad format -> input_bad_shape
+    in_bad_prid = copy.deepcopy(GOLDEN_INPUT)
+    in_bad_prid["prs"] = {"invalid_pr_id_format": {"verdicts": []}}
+    p_bad_prid = tmp_path / "bad_prid.json"
+    p_bad_prid.write_text(json.dumps(in_bad_prid))
+    r_bad_prid = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_prid))
+    assert_tool_error(r_bad_prid, "input_bad_shape")
+
+    # Input validation: usage not list -> input_bad_shape
+    in_bad_usage_type = copy.deepcopy(GOLDEN_INPUT)
+    in_bad_usage_type["usage"] = "not_a_list"
+    p_bad_utype = tmp_path / "bad_utype.json"
+    p_bad_utype.write_text(json.dumps(in_bad_usage_type))
+    r_bad_utype = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_utype))
+    assert_tool_error(r_bad_utype, "input_bad_shape")
+
+    # Input validation: usage missing provider/model -> input_bad_shape
+    in_bad_u_prov = copy.deepcopy(GOLDEN_INPUT)
+    in_bad_u_prov["usage"] = [{"role": "impl", "model": "m"}]
+    p_bad_uprov = tmp_path / "bad_uprov.json"
+    p_bad_uprov.write_text(json.dumps(in_bad_u_prov))
+    r_bad_uprov = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_uprov))
+    assert_tool_error(r_bad_uprov, "input_bad_shape")
+
+    # Input validation: usage invalid role -> input_bad_shape
+    in_bad_role = copy.deepcopy(GOLDEN_INPUT)
+    in_bad_role["usage"] = [{"provider": "p", "model": "m", "role": "developer"}]
+    p_bad_role = tmp_path / "bad_role.json"
+    p_bad_role.write_text(json.dumps(in_bad_role))
+    r_bad_role = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_role))
+    assert_tool_error(r_bad_role, "input_bad_shape")
+
+    # Input validation: usage tokens is bool / float / negative -> input_bad_shape
+    for bad_tok in [True, 1.5, -1]:
+        in_bad_tok = copy.deepcopy(GOLDEN_INPUT)
+        in_bad_tok["usage"] = [{"provider": "p", "model": "m", "role": "impl", "input_tokens": bad_tok}]
+        p_bad_tok = tmp_path / "bad_tok.json"
+        p_bad_tok.write_text(json.dumps(in_bad_tok))
+        r_bad_tok = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_tok))
+        assert_tool_error(r_bad_tok, "input_bad_shape")
+
+    # Input validation: counters not dict or counter value is bool / float / negative -> input_bad_shape
+    in_bad_counters = copy.deepcopy(GOLDEN_INPUT)
+    in_bad_counters["counters"] = [1, 2, 3]
+    p_bad_c = tmp_path / "bad_c.json"
+    p_bad_c.write_text(json.dumps(in_bad_counters))
+    r_bad_c = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_c))
+    assert_tool_error(r_bad_c, "input_bad_shape")
+
+    for bad_cnt in [False, 2.5, -5]:
+        in_bad_cnt = copy.deepcopy(GOLDEN_INPUT)
+        in_bad_cnt["counters"] = {"runs": bad_cnt}
+        p_bad_cnt = tmp_path / "bad_cnt.json"
+        p_bad_cnt.write_text(json.dumps(in_bad_cnt))
+        r_bad_cnt = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_cnt))
+        assert_tool_error(r_bad_cnt, "input_bad_shape")
+
+    # Input validation: verdicts[].head not 7-40 lowercase hex -> input_bad_shape
+    for bad_head in ["123456", "ABC1234", "zzzzzzz", "a" * 41]:
+        in_bad_head = copy.deepcopy(GOLDEN_INPUT)
+        in_bad_head["prs"] = {
+            "acme/widgets#21": {
+                "verdicts": [{"at": "2030-01-02T04:00:00Z", "role": "審查", "model": "m", "verdict": "pass", "head": bad_head}]
+            }
+        }
+        p_bad_head = tmp_path / "bad_head.json"
+        p_bad_head.write_text(json.dumps(in_bad_head))
+        r_bad_head = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_head))
+        assert_tool_error(r_bad_head, "input_bad_shape")
+
+    # Input validation: verdicts[].verdict not pass/fail/other -> input_bad_shape
+    in_bad_vd = copy.deepcopy(GOLDEN_INPUT)
+    in_bad_vd["prs"] = {
+        "acme/widgets#21": {
+            "verdicts": [{"at": "2030-01-02T04:00:00Z", "role": "審查", "model": "m", "verdict": "approved", "head": "aaaaaaa"}]
+        }
+    }
+    p_bad_vd = tmp_path / "bad_vd.json"
+    p_bad_vd.write_text(json.dumps(in_bad_vd))
+    r_bad_vd = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_bad_vd))
+    assert_tool_error(r_bad_vd, "input_bad_shape")
 
 
 # Contract C-B12: Defaults command

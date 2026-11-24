@@ -23,6 +23,15 @@ RECOGNIZED_CONFIG_KEYS = frozenset([
 
 ISO_UTC_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$")
 PR_ID_RE = re.compile(r"^([^#]+)#(\d+)$")
+HEX_HEAD_RE = re.compile(r"^[0-9a-f]{7,40}$")
+VALID_USAGE_ROLES = frozenset(["impl", "review", "arch", "pm", "other"])
+USAGE_INT_KEYS = frozenset([
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "cost_micro_usd",
+])
 
 
 class ToolError(Exception):
@@ -50,13 +59,13 @@ def parse_iso_utc(ts: str) -> datetime.datetime:
         raise ToolError("bad_time", f"invalid calendar time: {ts!r}: {e}") from e
 
 
-def parse_pr_id(pr_id: str) -> tuple[str, int]:
+def parse_pr_id(pr_id: str, err_code: str = "snapshot_bad_shape") -> tuple[str, int]:
     """Parse owner/repo#number into (owner/repo, number)."""
     if not isinstance(pr_id, str):
-        raise ToolError("snapshot_bad_shape", f"PR id must be string: {pr_id!r}")
+        raise ToolError(err_code, f"PR id must be string: {pr_id!r}")
     m = PR_ID_RE.match(pr_id)
-    if not m:
-        raise ToolError("snapshot_bad_shape", f"PR id must match owner/repo#number: {pr_id!r}")
+    if not m or "/" not in m.group(1):
+        raise ToolError(err_code, f"PR id must match owner/repo#number: {pr_id!r}")
     return m.group(1), int(m.group(2))
 
 
@@ -110,11 +119,17 @@ def validate_snapshot(snap: dict) -> None:
         for r in pr.get("reviews", []):
             if not isinstance(r, dict) or "id" not in r or "state" not in r or "commit_id" not in r:
                 raise ToolError("snapshot_bad_shape", "invalid review structure")
+            commit_id = r["commit_id"]
+            if not isinstance(commit_id, str) or not commit_id:
+                raise ToolError("snapshot_bad_shape", f"review commit_id must be a non-empty string: {commit_id!r}")
             parse_iso_utc(r.get("submitted_at"))
 
         for run in pr.get("ci_runs", []):
             if not isinstance(run, dict) or "run_id" not in run or "workflow" not in run:
                 raise ToolError("snapshot_bad_shape", "invalid ci_run structure")
+            run_attempt = run.get("run_attempt")
+            if run_attempt is None or isinstance(run_attempt, bool) or not isinstance(run_attempt, int):
+                raise ToolError("snapshot_bad_shape", f"ci_run run_attempt must be an integer: {run_attempt!r}")
             parse_iso_utc(run.get("created_at"))
 
 
@@ -134,7 +149,7 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
         if not isinstance(input_data["prs"], dict):
             raise ToolError("input_bad_shape", "input.prs must be an object")
         for prid, pr_override in input_data["prs"].items():
-            parse_pr_id(prid)
+            parse_pr_id(prid, "input_bad_shape")
             if not isinstance(pr_override, dict):
                 raise ToolError("input_bad_shape", f"input.prs.{prid} must be an object")
             if "verdicts" in pr_override and pr_override["verdicts"] is not None:
@@ -146,6 +161,45 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
                     parse_iso_utc(v.get("at"))
                     if v.get("verdict") not in ("pass", "fail", "other"):
                         raise ToolError("input_bad_shape", f"invalid verdict value: {v.get('verdict')!r}")
+                    head = v.get("head")
+                    if not isinstance(head, str) or not HEX_HEAD_RE.match(head):
+                        raise ToolError("input_bad_shape", f"verdict head must be 7-40 lowercase hex digits: {head!r}")
+            if "rework" in pr_override and pr_override["rework"] is not None:
+                if not isinstance(pr_override["rework"], bool):
+                    raise ToolError("input_bad_shape", f"input.prs.{prid}.rework must be a boolean or null")
+
+    if "usage" in input_data and input_data["usage"] is not None:
+        if not isinstance(input_data["usage"], list):
+            raise ToolError("input_bad_shape", "input.usage must be a list or null")
+        for item in input_data["usage"]:
+            if not isinstance(item, dict):
+                raise ToolError("input_bad_shape", "usage item must be an object")
+            provider = item.get("provider")
+            if not isinstance(provider, str) or not provider:
+                raise ToolError("input_bad_shape", f"usage item provider must be a non-empty string: {provider!r}")
+            model = item.get("model")
+            if not isinstance(model, str) or not model:
+                raise ToolError("input_bad_shape", f"usage item model must be a non-empty string: {model!r}")
+            role = item.get("role")
+            if role not in VALID_USAGE_ROLES:
+                raise ToolError("input_bad_shape", f"invalid usage role: {role!r}")
+            if "pr" in item and item["pr"] is not None:
+                parse_pr_id(item["pr"], "input_bad_shape")
+            for key in USAGE_INT_KEYS:
+                if key in item and item[key] is not None:
+                    val = item[key]
+                    if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+                        raise ToolError("input_bad_shape", f"usage item {key} must be a non-negative integer or null: {val!r}")
+
+    if "counters" in input_data and input_data["counters"] is not None:
+        if not isinstance(input_data["counters"], dict):
+            raise ToolError("input_bad_shape", "input.counters must be an object or null")
+        for k, v in input_data["counters"].items():
+            if not isinstance(k, str):
+                raise ToolError("input_bad_shape", f"counter key must be a string: {k!r}")
+            if v is not None:
+                if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+                    raise ToolError("input_bad_shape", f"counter {k} value must be a non-negative integer or null: {v!r}")
 
 
 def validate_config(cfg: dict) -> None:
