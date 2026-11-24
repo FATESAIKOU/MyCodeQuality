@@ -104,9 +104,13 @@ def invoke_runner(runner: Callable[[list[str]], Any], argv: list[str]) -> tuple[
 def check_rate_limit(stdout: str, stderr: str, code: int) -> tuple[bool, int | None, int | None]:
     """Check if response indicates HTTP 403 or 429 rate limit.
 
+    Rate limit is only checked when code != 0.
     Returns (is_rate_limited, retry_after_seconds, reset_epoch).
     """
-    combined = f"{stdout}\n{stderr}"
+    if code == 0:
+        return False, None, None
+
+    combined = f"{stderr}\n{stdout}"
     is_429 = code == 429 or bool(re.search(r"\b429\b", combined))
     is_403 = code == 403 or bool(re.search(r"\b403\b", combined))
 
@@ -217,6 +221,15 @@ def fetch_snapshot(
 
     ticket_owner_repo, ticket_num = parse_pr_id(ticket, "bad_arguments")
     ticket_owner, ticket_repo = ticket_owner_repo.split("/", 1)
+
+    if explicit_prs:
+        for pid in explicit_prs:
+            parse_pr_id(pid, "bad_arguments")
+
+    if search_repos:
+        for r in search_repos:
+            if not isinstance(r, str) or "/" not in r:
+                raise ToolError("bad_arguments", f"invalid search repo format: {r!r}")
 
     out = Path(out_path).resolve()
     if out.is_dir():
@@ -516,16 +529,6 @@ def fetch_snapshot(
 
     validate_snapshot(snapshot)
     rendered = render_json(snapshot)
-
-    out = Path(out_path).resolve()
-    if out.is_dir():
-        raise ToolError("out_unwritable", f"--out is a directory: {out}")
-    out_dir = out.parent
-    if not out_dir.exists():
-        try:
-            out_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            raise ToolError("out_unwritable", f"cannot create directory {out_dir}: {e}") from e
 
     try:
         tmp = tempfile.NamedTemporaryFile("w", dir=out_dir, delete=False, encoding="utf-8")

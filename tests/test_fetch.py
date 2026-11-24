@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from taskquality.cli import main
-from taskquality.fetch import fetch_snapshot
+from taskquality.fetch import check_rate_limit, fetch_snapshot
 from taskquality.formats import ToolError, read_json_file, validate_snapshot
 from taskquality.score import score_ticket
 from taskquality.conventions import DEFAULT_CONFIG
@@ -640,3 +640,344 @@ def test_cli_fetch_bad_arguments_and_out_unwritable(tmp_path: Path, monkeypatch,
     assert success_out.exists()
     snap = json.loads(success_out.read_text(encoding="utf-8"))
     assert snap["ticket"] == "acme/widgets#11"
+
+
+# --- Tests for BRIEF-11b2-fix requirements (Items 1, 2, 3, 5) ---
+
+
+def test_item1_check_rate_limit_code_zero_ignores_429_and_403(tmp_path: Path):
+    """Item 1: check_rate_limit must not treat 429/403 in stdout as rate limit when code == 0; no sleep, no retry."""
+    # 1. Unit tests on check_rate_limit
+    assert check_rate_limit(stdout='{"body": "Fixes #429 and #403", "id": 429}', stderr="", code=0) == (False, None, None)
+    assert check_rate_limit(stdout='429 403\nRetry-After: 60', stderr="warning 429", code=0) == (False, None, None)
+    assert check_rate_limit(stdout='x-ratelimit-reset: 9999999999\n429\n403', stderr="", code=0) == (False, None, None)
+
+    # 2. End-to-end fetch_snapshot where PR body/comment/id contain standalone 429 and 403 numbers
+    sleep_calls = []
+
+    def mock_sleeper(seconds: float):
+        sleep_calls.append(seconds)
+
+    golden = make_golden_runner()
+
+    def code_zero_with_numbers_runner(argv: list[str]) -> tuple[str, str, int]:
+        out, err, code = golden(argv)
+        # Inject standalone 429 and 403 into PR body and comments
+        if "/repos/acme/widgets/pulls/21" in " ".join(argv) and "--paginate" not in argv:
+            data = json.loads(out)
+            data["title"] = "Fix issue 429"
+            data["body"] = "Resolves #429 and addresses 403 vulnerability"
+            return json.dumps(data), err, 0
+        if "/repos/acme/widgets/issues/21/comments" in " ".join(argv):
+            data = json.loads(out)
+            data.append({
+                "id": 429,
+                "created_at": "2030-01-02T04:15:00Z",
+                "body": "Comment mentions error 429 and HTTP 403 code",
+                "user": {"login": "eve"},
+            })
+            return json.dumps(data), err, 0
+        return out, err, code
+
+    out_file = tmp_path / "snap_code0.json"
+    snap = fetch_snapshot(
+        ticket="acme/widgets#11",
+        out_path=out_file,
+        runner=code_zero_with_numbers_runner,
+        sleeper=mock_sleeper,
+    )
+    validate_snapshot(snap)
+    assert len(sleep_calls) == 0  # Crucial: did NOT sleep or retry
+    assert snap["prs"][0]["title"] == "Fix issue 429"
+    assert "429 and addresses 403" in snap["prs"][0]["body"]
+    comment_ids = [c["id"] for c in snap["prs"][0]["comments"]]
+    assert 429 in comment_ids
+
+
+def test_item2_run_attempt_supplement_and_ci_runs_sorting(tmp_path: Path):
+    """Item 2: run_attempt > 1 fetches /actions/runs/{id}/attempts/{k} and sorts ci_runs by (created_at, run_id, run_attempt)."""
+    attempt_endpoint_calls = []
+
+    def multi_attempt_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv)
+        if "/repos/acme/widgets/actions/runs/9001/attempts/" in cmd_str:
+            attempt_endpoint_calls.append(cmd_str)
+            # Return attempt 1 for run 9001
+            att1 = {
+                "id": 9001,
+                "name": "ci",
+                "event": "pull_request",
+                "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "run_attempt": 1,
+                "created_at": "2030-01-02T03:00:00Z",
+                "status": "completed",
+                "conclusion": "failure",
+            }
+            return json.dumps(att1), "", 0
+
+        if "/repos/acme/widgets/actions/runs" in cmd_str:
+            # Workflow runs list returns:
+            # Run 9001 currently at attempt 2 (created at 03:30)
+            # Run 9002 at attempt 1 (created at 03:15)
+            runs = [
+                {
+                    "id": 9001,
+                    "name": "ci",
+                    "event": "pull_request",
+                    "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "run_attempt": 2,
+                    "created_at": "2030-01-02T03:30:00Z",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "pull_requests": [{"number": 21}],
+                },
+                {
+                    "id": 9002,
+                    "name": "ci",
+                    "event": "pull_request",
+                    "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "run_attempt": 1,
+                    "created_at": "2030-01-02T03:15:00Z",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "pull_requests": [{"number": 21}],
+                },
+            ]
+            return json.dumps({"workflow_runs": runs}), "", 0
+
+        return make_golden_runner()(argv)
+
+    out_file = tmp_path / "snap_attempts.json"
+    snap = fetch_snapshot(
+        ticket="acme/widgets#11",
+        out_path=out_file,
+        runner=multi_attempt_runner,
+    )
+    validate_snapshot(snap)
+
+    # 1. Verify attempt endpoint was called
+    assert any("/actions/runs/9001/attempts/1" in c for c in attempt_endpoint_calls)
+
+    # 2. Verify all attempts are collected in ci_runs
+    pr21 = snap["prs"][0]
+    ci_runs = pr21["ci_runs"]
+    assert len(ci_runs) == 3
+
+    # 3. Verify deterministic sorting: (created_at, run_id, run_attempt)
+    # 03:00 -> run 9001, attempt 1
+    # 03:15 -> run 9002, attempt 1
+    # 03:30 -> run 9001, attempt 2
+    assert ci_runs[0]["run_id"] == 9001
+    assert ci_runs[0]["run_attempt"] == 1
+    assert ci_runs[0]["created_at"] == "2030-01-02T03:00:00Z"
+    assert ci_runs[0]["conclusion"] == "failure"
+
+    assert ci_runs[1]["run_id"] == 9002
+    assert ci_runs[1]["run_attempt"] == 1
+    assert ci_runs[1]["created_at"] == "2030-01-02T03:15:00Z"
+    assert ci_runs[1]["conclusion"] == "failure"
+
+    assert ci_runs[2]["run_id"] == 9001
+    assert ci_runs[2]["run_attempt"] == 2
+    assert ci_runs[2]["created_at"] == "2030-01-02T03:30:00Z"
+    assert ci_runs[2]["conclusion"] == "success"
+
+    # 4. Verify score_ticket works with supplemented attempts
+    report = score_ticket(snap, input_data=None, config=DEFAULT_CONFIG)
+    assert report["kind"] == "taskquality-report"
+
+
+def test_item2_rate_limit_403_and_x_ratelimit_reset_with_time_func_and_cap(tmp_path: Path):
+    """Item 2: 403 + x-ratelimit-reset branch with injected time_func and 60-second single sleep cap."""
+    # Subcase A: x-ratelimit-reset 25 seconds ahead -> sleep 25s, then succeeds
+    sleep_calls = []
+
+    def mock_sleeper(seconds: float):
+        sleep_calls.append(seconds)
+
+    current_simulated_time = 1_000_000.0
+
+    def mock_time_func() -> float:
+        return current_simulated_time
+
+    attempt_count = 0
+
+    def rl_403_runner(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            err_msg = "HTTP/1.1 403 Forbidden\nx-ratelimit-reset: 1000025\n\nRate limit exceeded"
+            return "", err_msg, 403
+        return make_golden_runner()(argv)
+
+    out_file1 = tmp_path / "snap_rl_403.json"
+    snap1 = fetch_snapshot(
+        "acme/widgets#11",
+        out_file1,
+        runner=rl_403_runner,
+        sleeper=mock_sleeper,
+        time_func=mock_time_func,
+    )
+    assert snap1["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [25]  # 1000025 - 1000000 = 25s
+
+    # Subcase B: x-ratelimit-reset 120 seconds ahead -> sleep capped at 60s
+    sleep_calls.clear()
+    attempt_count = 0
+
+    def rl_403_cap_runner(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            err_msg = "HTTP/1.1 403 Forbidden\nx-ratelimit-reset: 1000120\n\nRate limit exceeded"
+            return "", err_msg, 403
+        return make_golden_runner()(argv)
+
+    out_file2 = tmp_path / "snap_rl_cap.json"
+    snap2 = fetch_snapshot(
+        "acme/widgets#11",
+        out_file2,
+        runner=rl_403_cap_runner,
+        sleeper=mock_sleeper,
+        time_func=mock_time_func,
+    )
+    assert snap2["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [60]  # min(120, 60) = 60s
+
+    # Subcase C: consecutive 403 + x-ratelimit-reset -> rate_limited error after 3 retries
+    sleep_calls.clear()
+
+    def always_403_runner(argv: list[str]) -> tuple[str, str, int]:
+        return "", "HTTP/1.1 403 Forbidden\nx-ratelimit-reset: 1000080\n\nRate limit", 403
+
+    out_file3 = tmp_path / "snap_rl_fail.json"
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot(
+            "acme/widgets#11",
+            out_file3,
+            runner=always_403_runner,
+            sleeper=mock_sleeper,
+            time_func=mock_time_func,
+        )
+    assert exc_info.value.code == "rate_limited"
+    assert sleep_calls == [60, 60, 60]  # capped at 60s each retry
+
+
+def test_item3_rest_paginate_multiple_chunks_collected(tmp_path: Path):
+    """Item 3: REST --paginate concatenates multiple JSON arrays and {"workflow_runs": [...]} chunks into snapshot."""
+    # Chunked comments: two arrays
+    chunk1_comments = [
+        {"id": 501, "created_at": "2030-01-02T04:00:00Z", "body": "First page comment", "user": {"login": "alice"}}
+    ]
+    chunk2_comments = [
+        {"id": 502, "created_at": "2030-01-02T04:30:00Z", "body": "Second page comment", "user": {"login": "bob"}}
+    ]
+    paginated_comments_raw = f"{json.dumps(chunk1_comments)}\n{json.dumps(chunk2_comments)}"
+
+    # Chunked workflow runs: two {"workflow_runs": [...]} objects
+    run1 = {
+        "id": 9001,
+        "name": "ci",
+        "event": "pull_request",
+        "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "run_attempt": 1,
+        "created_at": "2030-01-02T03:01:00Z",
+        "status": "completed",
+        "conclusion": "failure",
+        "pull_requests": [{"number": 21}],
+    }
+    run2 = {
+        "id": 9002,
+        "name": "ci",
+        "event": "pull_request",
+        "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "run_attempt": 1,
+        "created_at": "2030-01-02T04:41:00Z",
+        "status": "completed",
+        "conclusion": "success",
+        "pull_requests": [{"number": 21}],
+    }
+    paginated_runs_raw = f"{json.dumps({'workflow_runs': [run1]})}\n{json.dumps({'workflow_runs': [run2]})}"
+
+    def paginate_chunks_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv)
+        if "/repos/acme/widgets/issues/21/comments" in cmd_str:
+            return paginated_comments_raw, "", 0
+        if "/repos/acme/widgets/actions/runs" in cmd_str and "branch=feature-cache" in cmd_str:
+            return paginated_runs_raw, "", 0
+        return make_golden_runner()(argv)
+
+    out_file = tmp_path / "snap_paginated_chunks.json"
+    snap = fetch_snapshot("acme/widgets#11", out_file, runner=paginate_chunks_runner)
+    validate_snapshot(snap)
+
+    pr21 = snap["prs"][0]
+    # Verify both comments collected
+    assert len(pr21["comments"]) == 2
+    assert pr21["comments"][0]["id"] == 501
+    assert pr21["comments"][1]["id"] == 502
+
+    # Verify both workflow runs collected
+    assert len(pr21["ci_runs"]) == 2
+    assert pr21["ci_runs"][0]["run_id"] == 9001
+    assert pr21["ci_runs"][1]["run_id"] == 9002
+
+
+def test_item3_rest_paginate_truncated_and_bad_json_fails(tmp_path: Path):
+    """Item 3: Truncated or malformed JSON in paginated output raises incomplete_pagination and --out is not created/modified."""
+    # 1. Truncated comments output
+    def truncated_comments_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv)
+        if "/repos/acme/widgets/issues/21/comments" in cmd_str:
+            # Chunk 1 ok, chunk 2 truncated
+            return '[{"id": 501, "created_at": "2030-01-02T04:00:00Z", "body": "ok"}]\n[{"id": 502', "", 0
+        return make_golden_runner()(argv)
+
+    out_file1 = tmp_path / "never_created_comments.json"
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file1, runner=truncated_comments_runner)
+    assert exc_info.value.code == "incomplete_pagination"
+    assert not out_file1.exists()
+
+    # Pre-existing file is preserved
+    sentinel_file = tmp_path / "sentinel_comments.json"
+    sentinel_content = b'{"preserved": true}\n'
+    sentinel_file.write_bytes(sentinel_content)
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", sentinel_file, runner=truncated_comments_runner)
+    assert exc_info.value.code == "incomplete_pagination"
+    assert sentinel_file.read_bytes() == sentinel_content
+
+    # 2. Truncated workflow runs output
+    def truncated_runs_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv)
+        if "/repos/acme/widgets/actions/runs" in cmd_str and "branch=feature-cache" in cmd_str:
+            return '{"workflow_runs": [{"id": 9001}]}\n{"workflow_runs": [', "", 0
+        return make_golden_runner()(argv)
+
+    out_file2 = tmp_path / "never_created_runs.json"
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file2, runner=truncated_runs_runner)
+    assert exc_info.value.code == "incomplete_pagination"
+    assert not out_file2.exists()
+
+
+def test_item5_fetch_snapshot_direct_bad_explicit_prs(tmp_path: Path):
+    """Item 5: fetch_snapshot directly called with invalid explicit_prs or search_repos raises bad_arguments."""
+    out_file = tmp_path / "snap_unused.json"
+
+    # 1. Invalid PR format string
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, explicit_prs=["invalid_pr_string"])
+    assert exc_info.value.code == "bad_arguments"
+
+    # 2. Non-string PR identifier
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, explicit_prs=[123])
+    assert exc_info.value.code == "bad_arguments"
+
+    # 3. Invalid search-repo format
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, search_repos=["no_slash_repo"])
+    assert exc_info.value.code == "bad_arguments"
+
