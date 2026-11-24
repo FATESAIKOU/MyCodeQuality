@@ -2,7 +2,8 @@
 
 `taskquality` 是針對單一工單（ticket）執行過程品質的量測工具。它與程式碼全域指標（`qmetrics repo`）互不依賴，不引入 `qmetrics`、不用浮點數、不讀系統時鐘、計算階段不連網，完全採確定性演算法產出結果。
 
-本工具提供兩大子命令：
+本工具提供三大子命令：
+- `taskquality fetch --ticket OWNER/REPO#N [--search-repo OWNER/REPO ...] [--pr OWNER/REPO#N ...] --out SNAPSHOT.json`：唯一連網之子命令，透過 GitHub API 取得工單候選 PR 及其審查、CI 等資訊，產出確定性快照檔。
 - `taskquality score --snapshot SNAPSHOT.json [--input INPUT.json] [--config CONFIG.json] [--json]`：讀取快照與外部輸入，依慣例設定計算品質指標並輸出報告。
 - `taskquality defaults`：印出內建預設的 config JSON，可供自訂設定時複製與修改。
 
@@ -300,3 +301,41 @@
 - `ticket_mismatch`: 快照之工單號與外部輸入之工單號不相符。
 - `bad_time`: 時間字串不符合 UTC ISO 8601（`YYYY-MM-DDTHH:MM:SSZ`）格式。
 - `bad_pattern`: 設定檔中之正規表示式編譯失敗。
+- `gh_unavailable`: 系統中找不到 `gh` 執行檔。
+- `gh_failed`: `gh` API 或子程序呼叫失敗。
+- `not_found`: 工單（issue）或指定之 PR 不存在。
+- `rate_limited`: 限流重試 3 次後仍被拒絕。
+- `incomplete_pagination`: 分頁資料未完整讀取即中斷。
+- `out_unwritable`: `--out` 輸出檔案路徑無法寫入。
+
+---
+
+## 7. 工單快照抓取（`taskquality fetch`）
+
+`taskquality fetch` 為 `taskquality` 工具中唯一連網的子命令。它經由 `gh api` 呼叫 GitHub API，抓取指定 ticket 的候選 PR，並將各 PR 的詳細資訊、留言、正式 Review 及 GitHub Actions 執行記錄完整收錄至快照 JSON。
+
+### 命令列參數
+- `--ticket OWNER/REPO#N`（必填）：目標工單識別碼，例如 `acme/widgets#11`。
+- `--search-repo OWNER/REPO`（選填，可重複指定）：篩選候選 PR 之儲存庫。若提供，則僅保留來自這些 repo 的候選 PR；未提供則不限制。
+- `--pr OWNER/REPO#N`（選填，可重複指定）：顯式指定要抓取的 PR。以此選項指定的 PR 一定會納入快照，不受 `--search-repo` 之過濾影響。
+- `--out SNAPSHOT.json`（必填）：快照輸出檔案路徑。寫入時採同目錄暫存檔搭配原子 rename；若中途有任何錯誤或抓取失敗，絕不留下殘缺檔案或覆寫現存檔案。
+
+### 存取的 GitHub API
+1. **候選 PR 清單**：
+   - GraphQL API：查詢 `repository(owner, name).issue(number).timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT])`，取來源為 PullRequest 的項目。以 `pageInfo.endCursor` 分頁抓取全頁。
+2. **PR 基本資訊**：
+   - REST API：`GET /repos/{owner}/{repo}/pulls/{number}`，取得標題、本文、狀態、草稿狀態、建立／合併／關閉時刻、head SHA 與 merge commit SHA。
+3. **PR 留言**：
+   - REST API：`GET /repos/{owner}/{repo}/issues/{number}/comments`（以 `--paginate` 分頁）。留言僅保留第一行（`first_line`），不存作者或帳號資訊。
+4. **GitHub 正式 Review**：
+   - REST API：`GET /repos/{owner}/{repo}/pulls/{number}/reviews`（以 `--paginate` 分頁）。僅存已提交之審查狀態（`APPROVED` 等）與提交時刻，不存 Review 內文與作者。
+5. **PR Commits**：
+   - REST API：`GET /repos/{owner}/{repo}/pulls/{number}/commits`（以 `--paginate` 分頁），記錄該 PR 所屬的所有 commit SHA。
+6. **Actions 執行記錄（Workflow Runs）**：
+   - REST API：`GET /repos/{owner}/{repo}/actions/runs?event=pull_request&branch={head_ref}`（以 `--paginate` 分頁）。過濾條件為：`pull_requests[].number == number` 或 run 的 `head_sha` 屬於 PR 的 commit SHA（此機制使 fork PR 亦能正確對應 CI run）。
+7. **重跑 Attempt 補齊**：
+   - REST API：若 workflow run 之 `run_attempt > 1`，呼叫 `GET /repos/{owner}/{repo}/actions/runs/{id}/attempts/{k}`（$k = 1 \dots \text{run\_attempt}-1$）補齊先前的 attempt 記錄。
+
+### 分頁與限流處理
+- **分頁**：REST 請求使用 `gh api --paginate`，GraphQL 迴圈檢查 `pageInfo.hasNextPage` 與 `endCursor`。任何分頁抓取中途失敗即視為工具錯誤（`incomplete_pagination`），不寫出快照。
+- **限流重試**：當 API 回傳 403 或 429 且帶有限流標頭（`Retry-After` 或 `x-ratelimit-reset`）時，自動重試最多 3 次（共 4 次請求），等待秒數單次上限 60 秒。若重試用盡則拋出 `rate_limited` 工具錯誤。
