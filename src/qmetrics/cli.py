@@ -5,8 +5,8 @@ import json
 import re
 import sys
 
-from qmetrics import SCHEMA_VERSION, __version__
-from qmetrics import gate, gitio, metrics
+from qmetrics import REPO_SCHEMA_VERSION, SCHEMA_VERSION, __version__
+from qmetrics import gate, gitio, metrics, repo
 
 EXIT_TOOL_ERROR = 2
 
@@ -28,6 +28,12 @@ def build_parser():
     g.add_argument("--file", required=True, help="JSON report from `qmetrics diff --json`")
     g.add_argument("--event", required=True, help="GitHub event name; only pull_request is judged")
     g.add_argument("--labels-json", default="[]", help="JSON array of PR label names (default: [])")
+    r = sub.add_parser("repo", help="static quality metrics for an entire repo at a rev")
+    r.add_argument("--repo", default=".", help="path inside the working tree (default: .)")
+    r.add_argument("--rev", default="HEAD", help="commit to measure (default: HEAD)")
+    r.add_argument("--src", default="src", help="source directory (default: src)")
+    r.add_argument("--tests", default="tests", help="tests directory (default: tests)")
+    r.add_argument("--json", action="store_true", help="print the JSON report instead of the summary")
     return p
 
 
@@ -75,14 +81,58 @@ def run_diff(a):
         }
 
 
+def run_repo(a):
+    with gitio.make_home() as home:
+        git = gitio.Git(a.repo, home)
+        warnings = gitio.preflight(git, history=False)
+        rev = gitio.resolve_commit(git, a.rev)
+        result = repo.analyze(git, rev, a.src, a.tests)
+        return {
+            "kind": "qmetrics-repo",
+            "schema_version": REPO_SCHEMA_VERSION,
+            "tool_version": __version__,
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "git_version": git.version(),
+            "rev": rev,
+            "src": a.src,
+            "tests": a.tests,
+            **result,
+            "warnings": warnings,
+        }
+
+
 def render_json(report):
-    return json.dumps(report, sort_keys=True, indent=2) + "\n"
+    return json.dumps(report, sort_keys=True, indent=2, ensure_ascii=True) + "\n"
 
 
 def show(v):
     if v is None:
         return "unknown"
     return str(v).lower() if isinstance(v, bool) else str(v)
+
+
+def render_repo_summary(r):
+    out = [
+        f"qmetrics repo {r['tool_version']} (schema {r['schema_version']}, python {r['python_version']}, git {r['git_version']})",
+        f"rev {r['rev']}",
+    ]
+    if r["parse_failures"]:
+        out.append(f"INCOMPLETE: {len(r['parse_failures'])} parse failure(s); null values are undetermined")
+    if not r["applicable"]:
+        out.append(f"not applicable: no .py files under {r['src']}")
+    else:
+        tot = r["totals"]
+        out.append(f"totals: files={show(tot['files'])} lines={show(tot['lines'])} functions={show(tot['functions'])} tests={show(tot['tests'])}")
+        if r["counts"]:
+            out += [f"{k}: {show(v)}" for k, v in sorted(r["counts"].items())]
+        if r["findings"]:
+            for f in r["findings"]:
+                fn = f" {f['function']}" if f["function"] else ""
+                out.append(f"  {f['kind']} {f['file']}{fn} {f['value']}")
+    for f in r["parse_failures"]:
+        out.append(f"parse_failure ({f['scope']}): {f['file']} -> undetermined")
+    out += [f"warning: {w}" for w in r["warnings"]]
+    return "\n".join(out) + "\n"
 
 
 def render_summary(r):
@@ -124,6 +174,14 @@ def main(argv=None):
             return EXIT_TOOL_ERROR
         sys.stdout.write("\n".join(lines) + "\n")
         return rc
+    if args.cmd == "repo":
+        try:
+            report = run_repo(args)
+        except gitio.ToolError as e:
+            print(f"qmetrics: error {e.code}: {_one_line(e.message)}", file=sys.stderr)
+            return EXIT_TOOL_ERROR
+        sys.stdout.write(render_json(report) if args.json else render_repo_summary(report))
+        return 0
     try:
         report = run_diff(args)
     except gitio.ToolError as e:
