@@ -1,12 +1,14 @@
-"""taskquality CLI: `taskquality score` and `taskquality defaults`."""
+"""taskquality CLI: `taskquality fetch`, `taskquality score`, and `taskquality defaults`."""
 
 import argparse
 import re
 import sys
 
 from taskquality.conventions import DEFAULT_CONFIG
+from taskquality.fetch import fetch_snapshot
 from taskquality.formats import (
     ToolError,
+    parse_pr_id,
     read_json_file,
     render_json,
     validate_config,
@@ -29,6 +31,13 @@ class TaskQualityArgumentParser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     p = TaskQualityArgumentParser(prog="taskquality", description="Task quality metrics for a ticket.")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    # fetch
+    f = sub.add_parser("fetch", help="fetch ticket snapshot from GitHub API")
+    f.add_argument("--ticket", required=True, help="ticket identifier, OWNER/REPO#N")
+    f.add_argument("--search-repo", action="append", nargs="*", default=[], help="filter candidate PRs by repo (optional, repeatable)")
+    f.add_argument("--pr", action="append", nargs="*", default=[], help="explicit PR identifier to include, OWNER/REPO#N (optional, repeatable)")
+    f.add_argument("--out", required=True, help="output path for snapshot JSON")
 
     # score
     s = sub.add_parser("score", help="calculate task quality metrics for a ticket snapshot")
@@ -87,6 +96,39 @@ def main(argv=None) -> int:
 
     if args.cmd == "defaults":
         sys.stdout.write(render_json(DEFAULT_CONFIG))
+        return EXIT_OK
+
+    if args.cmd == "fetch":
+        try:
+            parse_pr_id(args.ticket, "bad_arguments")
+            search_repos = []
+            for item in args.search_repo:
+                if isinstance(item, list):
+                    search_repos.extend(item)
+                else:
+                    search_repos.append(item)
+            for r in search_repos:
+                if not isinstance(r, str) or "/" not in r:
+                    raise ToolError("bad_arguments", f"invalid search repo format: {r!r}")
+
+            explicit_prs = []
+            for item in args.pr:
+                if isinstance(item, list):
+                    explicit_prs.extend(item)
+                else:
+                    explicit_prs.append(item)
+            for p in explicit_prs:
+                parse_pr_id(p, "bad_arguments")
+
+            fetch_snapshot(
+                ticket=args.ticket,
+                out_path=args.out,
+                search_repos=search_repos if search_repos else None,
+                explicit_prs=explicit_prs if explicit_prs else None,
+            )
+        except ToolError as e:
+            sys.stderr.write(f"taskquality: error {e.code}: {_one_line(e.message)}\n")
+            return EXIT_TOOL_ERROR
         return EXIT_OK
 
     if args.cmd == "score":
