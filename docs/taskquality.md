@@ -1,0 +1,302 @@
+# Task Quality (`taskquality`) 規格與說明
+
+`taskquality` 是針對單一工單（ticket）執行過程品質的量測工具。它與程式碼全域指標（`qmetrics repo`）互不依賴，不引入 `qmetrics`、不用浮點數、不讀系統時鐘、計算階段不連網，完全採確定性演算法產出結果。
+
+本工具提供兩大子命令：
+- `taskquality score --snapshot SNAPSHOT.json [--input INPUT.json] [--config CONFIG.json] [--json]`：讀取快照與外部輸入，依慣例設定計算品質指標並輸出報告。
+- `taskquality defaults`：印出內建預設的 config JSON，可供自訂設定時複製與修改。
+
+---
+
+## 1. 快照格式（Snapshot）
+
+快照（Snapshot）由取得層（`fetch`）抓取 GitHub 資料後產出，作為 `score` 的主要輸入。快照檔不包含抓取時刻、帳號或私人資訊。
+
+```json
+{
+  "kind": "taskquality-snapshot",
+  "schema_version": 1,
+  "ticket": "acme/widgets#11",
+  "prs": [
+    {
+      "id": "acme/widgets#21",
+      "title": "Add widget cache",
+      "body": "Closes #11",
+      "state": "closed",
+      "draft": false,
+      "created_at": "2030-01-02T03:00:00Z",
+      "merged_at": "2030-01-02T05:00:00Z",
+      "closed_at": "2030-01-02T05:00:00Z",
+      "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "merge_commit_sha": "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "comments": [
+        {"id": 501, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：vendor/model-x 結論：要修（head 0000000）"},
+        {"id": 502, "created_at": "2030-01-02T04:50:00Z", "first_line": "審查：vendor/model-x 結論：可以 merge（head 1111111）"}
+      ],
+      "reviews": [
+        {"id": 601, "submitted_at": "2030-01-02T04:55:00Z", "state": "APPROVED", "commit_id": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      ],
+      "ci_runs": [
+        {"run_id": 9001, "workflow": "ci", "event": "pull_request", "head_sha": "0000000ccccccccccccccccccccccccccccccccc", "run_attempt": 1, "created_at": "2030-01-02T03:01:00Z", "status": "completed", "conclusion": "failure"},
+        {"run_id": 9002, "workflow": "ci", "event": "pull_request", "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "run_attempt": 1, "created_at": "2030-01-02T04:41:00Z", "status": "completed", "conclusion": "success"}
+      ]
+    }
+  ]
+}
+```
+
+### 欄位說明
+- `kind`: 固定為 `"taskquality-snapshot"`。
+- `schema_version`: 目前為 `1`。
+- `ticket`: 工單識別，格式為 `owner/repo#number`。
+- `prs`: 陣列，依 PR 識別 `(owner/repo, number)` 排序。
+  - `id`: PR 識別，格式為 `owner/repo#number`。
+  - `title`, `body`: PR 標題與內文。
+  - `state`: `"open"` 或 `"closed"`。是否已合併由 `merged_at` 判定。
+  - `created_at`, `merged_at`, `closed_at`: ISO 8601 UTC 時刻字串（`YYYY-MM-DDTHH:MM:SSZ`）。未發生為 `null`。
+  - `head_sha`: 40 碼十六進位字串。
+  - `comments`: 留言清單，只存第一行 `first_line`。
+  - `reviews`: GitHub 正式 Review 清單。`state` 包含 `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, `DISMISSED`。
+  - `ci_runs`: Actions 執行記錄，包含 `run_id`, `workflow`, `head_sha`, `run_attempt`, `status`, `conclusion`。
+
+---
+
+## 2. 外部輸入檔格式（External Input）
+
+外部輸入檔（`--input`）由導入方或成本管理模組（如 `MyCostControl`）產生，提供無法從 GitHub 公開資料取得的執行資訊（例如 token 用量、模型費用、內部會話計數或審查結果覆寫）。
+
+```json
+{
+  "kind": "taskquality-input",
+  "schema_version": 1,
+  "ticket": "acme/widgets#11",
+  "started_at": "2030-01-02T02:00:00Z",
+  "usage": [
+    {
+      "pr": "acme/widgets#21",
+      "role": "impl",
+      "provider": "vendor",
+      "model": "model-y",
+      "input_tokens": 120000,
+      "output_tokens": 8000,
+      "cache_read_tokens": 90000,
+      "cache_write_tokens": null,
+      "cost_micro_usd": 410000
+    }
+  ],
+  "counters": {
+    "compactions": 2,
+    "sessions": 3
+  },
+  "prs": {
+    "acme/widgets#21": {
+      "verdicts": [
+        {"at": "2030-01-02T04:00:00Z", "role": "審查", "model": "vendor/model-x", "verdict": "fail", "head": "0000000"},
+        {"at": "2030-01-02T04:50:00Z", "role": "審查", "model": "vendor/model-x", "verdict": "pass", "head": "1111111"}
+      ],
+      "rework": false
+    }
+  }
+}
+```
+
+### 欄位說明
+- `kind`: 固定為 `"taskquality-input"`。
+- `schema_version`: 目前為 `1`。
+- `ticket`: 必須與快照的 `ticket` 完全一致，否則視為 `ticket_mismatch` 工具錯誤。
+- `started_at`（選填）: 開工時刻（UTC）。未提供時週期計算改採最早建立的 PR `created_at`。
+- `usage`（選填）: Token 與成本記錄陣列。各 token 與 `cost_micro_usd` 均為非負整數（避免浮點數；費用單位為微美元 micro-USD，即百萬分之一美元）。
+- `counters`（選填）: 名稱與非負整數的對應物件，原樣輸出至報告。
+- `prs.<id>.verdicts`（選填）: 覆寫特定 PR 的審查結論序列。若存在（包含空陣列），該 PR 的 `verdicts_source` 記為 `"input"`；若給定 `null`，則該 PR 審查各項輸出為 `null`，原因為 `input_null`。
+- `prs.<id>.rework`（選填）: 布林值或 `null`，覆寫特定 PR 的返工推斷結果，`rework_source` 記為 `"input"`。
+
+---
+
+## 3. 設定格式（Config）
+
+`--config` 定義了工單關聯、審查結論擷取正規式、返工關鍵字等慣例。執行 `taskquality defaults` 可取得內建預設值：
+
+```json
+{
+  "kind": "taskquality-config",
+  "schema_version": 1,
+  "ticket_ref_keywords": ["closes", "close", "closed", "fixes", "fix", "fixed", "resolves", "resolve", "resolved", "refs", "ref"],
+  "verdict_sources": ["comments"],
+  "github_review_role": "審查",
+  "verdict_pattern": "^(?P<role>\\S*審查)：(?P<model>\\S+) 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})）",
+  "review_roles": ["審查"],
+  "pass_verdicts": ["可以 merge", "通過"],
+  "fail_verdicts": ["要修", "要退回", "要退回設計"],
+  "rework_keywords": ["修正", "fix", "fixes", "follow-up", "revert"],
+  "ci_workflows": null,
+  "ci_green_conclusions": ["success", "neutral", "skipped"]
+}
+```
+
+### 雜湊計算（`config_digest`）
+- 針對 12 個既定認得的鍵，依 `json.dumps(filtered, sort_keys=True, separators=(",", ":"), ensure_ascii=True)` 序列化後計算 SHA-256。
+- 輸出格式為 `"sha256:" + 64碼小寫十六進位`。
+
+---
+
+## 4. 報告格式（Report）
+
+`taskquality score --json` 產出之報告結構如下：
+
+```json
+{
+  "clean": false,
+  "config_digest": "sha256:…",
+  "counters": {
+    "compactions": 2,
+    "sessions": 3
+  },
+  "excluded_prs": [
+    {
+      "pr": "acme/widgets#30",
+      "reason": "no_ticket_ref"
+    }
+  ],
+  "kind": "taskquality-report",
+  "metrics": {
+    "approved_head_stale": 0,
+    "ci_first_green": {
+      "den": 1,
+      "num": 0
+    },
+    "cycle_basis": "input_started_at",
+    "cycle_seconds": 10800,
+    "fix_rounds": 1,
+    "prs_closed_unmerged": 0,
+    "prs_merged": 1,
+    "prs_open": 0,
+    "prs_without_ci": 0,
+    "re_reviews": 1,
+    "review_first_pass": {
+      "den": 1,
+      "num": 0
+    },
+    "rework_prs": 0,
+    "unreviewed_merged_prs": 0
+  },
+  "missing": [
+    {
+      "field": "usage.by_model[vendor,model-y].cache_write_tokens",
+      "reason": "input_null"
+    },
+    {
+      "field": "usage.totals.cache_write_tokens",
+      "reason": "input_null"
+    }
+  ],
+  "prs": [
+    {
+      "approved_head_stale": false,
+      "ci_first_green": false,
+      "ci_first_head": "0000000ccccccccccccccccccccccccccccccccc",
+      "created_at": "2030-01-02T03:00:00Z",
+      "first_review_pass": false,
+      "fix_rounds": 1,
+      "merged_at": "2030-01-02T05:00:00Z",
+      "pr": "acme/widgets#21",
+      "re_reviews": 1,
+      "rework": false,
+      "rework_source": "derived",
+      "state": "merged",
+      "verdicts": 2,
+      "verdicts_source": "comments"
+    }
+  ],
+  "schema_version": 1,
+  "status": "complete",
+  "ticket": "acme/widgets#11",
+  "tool_version": "0.3.0",
+  "usage": {
+    "by_model": [
+      {
+        "cache_read_tokens": 90000,
+        "cache_write_tokens": null,
+        "cost_micro_usd": 410000,
+        "input_tokens": 120000,
+        "model": "model-y",
+        "output_tokens": 8000,
+        "provider": "vendor"
+      }
+    ],
+    "totals": {
+      "cache_read_tokens": 90000,
+      "cache_write_tokens": null,
+      "cost_micro_usd": 410000,
+      "input_tokens": 120000,
+      "output_tokens": 8000
+    }
+  },
+  "warnings": []
+}
+```
+
+### 工單狀態（`status`）
+- `no_prs`: 快照中無屬於本工單的 PR。
+- `in_progress`: 仍有 `state == "open"` 的 PR。
+- `no_merged_pr`: 無 open PR，且亦無已合併的 PR（全部為 `closed_unmerged`）。
+- `complete`: 無 open PR，且至少有一個 PR 已合併。
+
+### 判定旗標（`clean`）
+當且僅當 `status == "complete"` 時進行是非判定。必須滿足以下七項條件：
+1. `unreviewed_merged_prs == 0`
+2. `prs_without_ci == 0`
+3. `review_first_pass.num == review_first_pass.den`
+4. `fix_rounds == 0`
+5. `approved_head_stale == 0`
+6. `ci_first_green.num == ci_first_green.den`
+7. `rework_prs == 0`
+
+- **短路判定**：若任一條件確定不成立，`clean` 立即判定為 `false`（不論其他項是否為 `null`）。
+- **全部成立**：若全數成立，`clean` 為 `true`。
+- **未定**：若無不成立條件，但有條件因依賴項為 `null` 而無法判斷，則 `clean` 為 `null`，並在 `missing` 記錄每個判不出的原因。
+
+---
+
+## 5. 缺值行為（Missing Values）
+
+工具不補 0、不自動猜測數值。當鍵不存在或值為 `null` 時，報告一律輸出 `null`，並於 `missing` 陣列登錄原因。
+
+### 缺值原因代碼（`reason`）
+- `input_missing`: 外部輸入檔案未提供（或整個鍵未給定）。
+- `input_null`: 外部輸入檔案顯式給予 `null`。
+- `no_verdict`: PR 無任何合格的審查結論。
+- `unrecognized_verdict`: 審查結論字無法比對至 `pass_verdicts` 或 `fail_verdicts`（即 `other`）。
+- `no_ci_runs`: PR 無符合條件的 attempt 1 CI 記錄。
+- `ci_incomplete`: 首個 head 上的 CI 尚未全部完成。
+- `pr_open`: 仍有 PR 處於開啟狀態，工單尚未結束。
+- `no_merged_pr`: 工單無已合併之 PR。
+- `bad_interval`: 結束時刻早於起始時刻。
+
+### 欄位路徑（`field`）表示法
+- PR 層級：`prs[owner/repo#number].欄位`（例如 `prs[acme/widgets#21].fix_rounds`）。
+- 工單指標層級：`metrics.欄位`（例如 `metrics.review_first_pass`）。
+- 用量層級：`usage.by_model[provider,model].欄位` 或 `usage.totals.欄位`。
+- 整體缺值：若整個區塊未提供，標示至該層級（如 `usage`, `counters`, `clean`）。
+- 說明性欄位（`merged_at`, `ci_first_head`, `cycle_basis`）為 `null` 時不在 `missing` 中列出。
+
+---
+
+## 6. 工具錯誤與 Exit Code
+
+- 正常結束回傳碼為 `0`。
+- 發生工具錯誤時回傳碼為 `2`，標準錯誤（stderr）輸出單行錯誤訊息：
+  ```
+  taskquality: error <code>: <message>
+  ```
+  標準輸出（stdout）為空。
+
+### 錯誤代碼一覽
+- `bad_arguments`: 指令列引數解析錯誤或缺少必要選項。
+- `file_unreadable`: 檔案無法讀取（不存在或無權限）。
+- `file_not_json`: 檔案非合法的 JSON 格式。
+- `snapshot_bad_shape`: 快照結構錯誤、缺少必要欄位、或 kind/schema 不符。
+- `input_bad_shape`: 外部輸入結構錯誤或 kind/schema 不符。
+- `config_bad_shape`: 設定結構錯誤、缺少必要欄位、或來源定義不合法。
+- `ticket_mismatch`: 快照之工單號與外部輸入之工單號不相符。
+- `bad_time`: 時間字串不符合 UTC ISO 8601（`YYYY-MM-DDTHH:MM:SSZ`）格式。
+- `bad_pattern`: 設定檔中之正規表示式編譯失敗。
