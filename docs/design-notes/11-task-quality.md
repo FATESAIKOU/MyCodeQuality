@@ -1,7 +1,7 @@
 # #11 任務品質（ticket 單位）：介面設計
 
 作者：anthropic/claude-opus-5-5（專案架構師，作者模式）。狀態：待非作者審查；本人看過介面、同意後才實作。
-範例全是合成資料（`acme/widgets` 等名稱、SHA、時刻都是假的）。
+範例全是合成資料（`acme/widgets` 等名稱、SHA、時刻都是假的）。§3.1（快照）＋§3.3（input）＋內建 config（§3.5）是一組端到端範例，照 §4 手算就得到 §3.6 的輸出；§3.4 自成一例。
 
 ## 0. 先看這裡（給本人）
 
@@ -10,7 +10,7 @@
 - **程式碼品質＝整個 repo 的全體分數**：`qmetrics repo`。量某個 commit 上 `src` 全部的程式碼，不分 ticket，也不做 ticket 彙總。以 qmetrics 現有的定義為底（函式長度、巢狀深度、重複、AST 相同、測試數）。
 - **任務品質＝一張 ticket 的邏輯模板**：`taskquality`。`fetch` 從 GitHub 取資料存成快照，`score` 只吃快照，算執行過程指標，再帶上導入方填的輸入（token、模型、內部記錄）。比對的慣例都寫在 config 裡，換團隊只改 config。
 - 輸出全是**分項**，不加權；任務品質另給一個是非判定 `clean`。**加權的合成分先不做**，見 §8 Q1。
-- 缺值一律 `null`，`missing` 列出原因；不補 0。
+- 缺值一律 `null`，不補 0；`taskquality` 的 `missing` 列出原因，`qmetrics repo` 的解析失敗列在 `parse_failures`。
 - 本人要決定的事集中在 §8。其中 Q2 會影響數字的意義：團隊目前多半只把**最後一輪**「可以 merge」貼在 PR 上，「要修」那幾輪留在報告檔。這樣從 PR 留言算出的「審查一次通過率」會偏高。
 
 ## 1. 目標與不做什麼
@@ -64,6 +64,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 - 陣列的排序在各欄位寫明；物件靠 `sort_keys`。
 - PR 識別一律 `owner/repo#number`；排序時依 (owner/repo 字串, number 數字)。
 - 每個檔都有 `kind` 與 `schema_version`；讀到不認得的 `kind` 或版本是工具錯誤。未知欄位：輸入檔忽略（前向相容），輸出不加。
+- `warnings`（兩種輸出都有）：本設計沒有任何情況會產生，固定是空陣列；保留給之後只加不改的提示。
 - 缺值：**鍵不存在**＝沒提供；**值是 `null`**＝提供了但未知。兩者在輸出都是 `null`，`missing[].reason` 分別是 `input_missing`／`input_null`。不補 0。
 
 ### 3.1 快照（`fetch` 的輸出、`score` 的輸入）
@@ -86,14 +87,31 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
       "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "merge_commit_sha": "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "comments": [
-        {"id": 501, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：vendor/model-x 結論：要修（head 0000000）"}
+        {"id": 501, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：vendor/model-x 結論：要修（head 0000000）"},
+        {"id": 502, "created_at": "2030-01-02T04:50:00Z", "first_line": "審查：vendor/model-x 結論：可以 merge（head 1111111）"}
       ],
       "reviews": [
-        {"id": 601, "submitted_at": "2030-01-02T04:30:00Z", "state": "APPROVED", "commit_id": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "first_line": ""}
+        {"id": 601, "submitted_at": "2030-01-02T04:55:00Z", "state": "APPROVED", "commit_id": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
       ],
       "ci_runs": [
-        {"run_id": 9001, "workflow": "ci", "event": "pull_request", "head_sha": "0000000cccccccccccccccccccccccccccccccc", "run_attempt": 1, "created_at": "2030-01-02T03:01:00Z", "status": "completed", "conclusion": "failure"}
+        {"run_id": 9001, "workflow": "ci", "event": "pull_request", "head_sha": "0000000ccccccccccccccccccccccccccccccccc", "run_attempt": 1, "created_at": "2030-01-02T03:01:00Z", "status": "completed", "conclusion": "failure"},
+        {"run_id": 9002, "workflow": "ci", "event": "pull_request", "head_sha": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "run_attempt": 1, "created_at": "2030-01-02T04:41:00Z", "status": "completed", "conclusion": "success"}
       ]
+    },
+    {
+      "id": "acme/widgets#30",
+      "title": "Bump deps",
+      "body": "see #11",
+      "state": "closed",
+      "draft": false,
+      "created_at": "2030-01-02T03:30:00Z",
+      "merged_at": "2030-01-02T03:40:00Z",
+      "closed_at": "2030-01-02T03:40:00Z",
+      "head_sha": "4444444eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "merge_commit_sha": "5555555fffffffffffffffffffffffffffffffff",
+      "comments": [],
+      "reviews": [],
+      "ci_runs": []
     }
   ]
 }
@@ -106,8 +124,10 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `merged_at`、`closed_at`、`merge_commit_sha` | 字串或 `null` | |
 | `head_sha` | 40 碼 | 抓取當下的 head；已 merge 的 PR 就是最後的 head |
 | `comments` | 陣列，依 (`created_at`, `id`) | PR（issue）留言；**只存第一行**（少存私人內容） |
-| `reviews` | 陣列，依 (`submitted_at`, `id`) | GitHub 正式 review；`state` 原樣（`APPROVED`、`CHANGES_REQUESTED`、`COMMENTED`、`DISMISSED`） |
+| `reviews` | 陣列，依 (`submitted_at`, `id`) | GitHub 正式 review；`state` 原樣（`APPROVED`、`CHANGES_REQUESTED`、`COMMENTED`、`DISMISSED`）。結論只看 `state`，所以**不存 review 本文** |
 | `ci_runs` | 陣列，依 (`created_at`, `run_id`, `run_attempt`) | 這個 PR 的 Actions workflow run（每個 attempt 一筆）；`conclusion` 未完成時是 `null` |
+
+範例裡：#30 的本文只有 `see #11`（`see` 不在 `ticket_ref_keywords`），所以 `score` 把它列進 `excluded_prs`。review 601 在內建 config（`verdict_sources: ["comments"]`）下不被讀；若改成 `["comments", "reviews"]`，結果見 §3.6 之後的說明。
 
 快照含 PR 標題與本文（判斷關聯與返工要用）；**私有 repo 的快照不要 commit 到公開 repo**。`score` 的輸出不含任何自由文字（§3.4、§3.6）。
 
@@ -122,21 +142,14 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 ### 3.3 外部輸入檔（`--input`；MyCostControl 之後會產這個）
 
+端到端範例用的 input（沒有 `prs`，所以結論從留言讀、返工用推斷）：
+
 ```json
 {
   "kind": "taskquality-input",
   "schema_version": 1,
   "ticket": "acme/widgets#11",
   "started_at": "2030-01-02T02:00:00Z",
-  "prs": {
-    "acme/widgets#21": {
-      "verdicts": [
-        {"at": "2030-01-02T04:00:00Z", "role": "審查", "model": "vendor/model-x", "verdict": "fail", "head": "0000000"},
-        {"at": "2030-01-02T04:50:00Z", "role": "審查", "model": "vendor/model-x", "verdict": "pass", "head": "1111111"}
-      ],
-      "rework": false
-    }
-  },
   "usage": [
     {"pr": "acme/widgets#21", "role": "impl", "provider": "vendor", "model": "model-y",
      "input_tokens": 120000, "output_tokens": 8000, "cache_read_tokens": 90000, "cache_write_tokens": null,
@@ -146,10 +159,24 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 }
 ```
 
+要覆寫某個 PR 的結論或返工時，多加 `prs`（不屬於上面的端到端範例；加了之後的結果見 §3.6 之後的說明）：
+
+```json
+  "prs": {
+    "acme/widgets#21": {
+      "verdicts": [
+        {"at": "2030-01-02T04:00:00Z", "role": "審查", "model": "vendor/model-x", "verdict": "fail", "head": "0000000"},
+        {"at": "2030-01-02T04:50:00Z", "role": "審查", "model": "vendor/model-x", "verdict": "pass", "head": "1111111"}
+      ],
+      "rework": false
+    }
+  }
+```
+
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `started_at` | 時刻、`null` 或缺 | 開工時刻；缺／`null` 時週期時間改用第一個 PR 的 `created_at`（§4.7） |
-| `prs.<id>.verdicts` | 陣列或缺 | 有給就**取代**從留言／review 讀出的審查結論（來源記成 `input`）；`verdict` 只能是 `pass`／`fail`／`other`；`head` 是 7～40 碼小寫十六進位；依 (`at`, 原順序) 排 |
+| `prs.<id>.verdicts` | 陣列、`null` 或缺 | 鍵存在（含空陣列）就**取代**從留言／review 讀出的審查結論，`verdicts_source` 記成 `input`；`null` 時該 PR 的審查各項是 `null`（`input_null`）。`verdict` 只能是 `pass`／`fail`／`other`；`head` 是 7～40 碼小寫十六進位；依 (`at`, 原順序) 排；一樣要經過 `review_roles` 過濾（§4.1） |
 | `prs.<id>.rework` | 布林、`null` 或缺 | 有給就取代 §4.5 的推斷 |
 | `usage[]` | 陣列或缺 | `role` ∈ `impl`／`review`／`arch`／`pm`／`other`；`pr` 可為 `null`（不屬於單一 PR）；token 與 `cost_micro_usd` 是非負整數或 `null`（成本單位：百萬分之一美元，避免浮點） |
 | `counters` | 物件或缺 | 名稱 → 非負整數或 `null`；原樣帶到輸出，不解讀 |
@@ -168,13 +195,14 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
   "tests": "tests",
   "applicable": true,
   "totals": {"files": 6, "lines": 812, "functions": 40, "tests": 57},
-  "counts": {"long_files": 0, "long_functions": 1, "deep_functions": 2,
-             "ast_dup_functions": 0, "dup_windows": 3, "smell_events": 6},
+  "counts": {"long_files": 0, "long_functions": 1, "deep_functions": 1,
+             "ast_dup_functions": 0, "dup_windows": 3, "smell_events": 5},
   "ratios": {"long_files": {"num": 0, "den": 6}, "long_functions": {"num": 1, "den": 40},
-             "deep_functions": {"num": 2, "den": 40}, "ast_dup_functions": {"num": 0, "den": 40}},
+             "deep_functions": {"num": 1, "den": 40}, "ast_dup_functions": {"num": 0, "den": 40}},
   "findings": [
     {"kind": "deep_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 4},
     {"kind": "dup_windows", "file": "src/pkg/b.py", "function": null, "value": 3},
+    {"kind": "dup_windows", "file": "src/pkg/c.py", "function": null, "value": 3},
     {"kind": "long_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 63}
   ],
   "parse_failures": [],
@@ -196,9 +224,15 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總 |
 | `counts.dup_windows` | 6 行視窗（`metrics.windows`）出現在 ≥ 2 個不同檔的**相異**視窗數 |
 | `counts.smell_events` | 上面五項加總 |
-| `ratios.<k>` | `{num: counts.<k>, den: totals.files 或 totals.functions}`；den＝0 時 `null` |
-| `findings` | 每個被計到的項目一筆：`long_file`（value＝行數）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`dup_windows`（該檔與他檔共有的視窗數）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
+| `ratios.<k>` | 只有下面四項，`{num: counts.<k>, den}`；den＝0 時整個是 `null`。`dup_windows`、`smell_events` 沒有自然的分母，不給比率 |
+| `ratios.long_files` | den＝`totals.files` |
+| `ratios.long_functions` | den＝`totals.functions` |
+| `ratios.deep_functions` | den＝`totals.functions` |
+| `ratios.ast_dup_functions` | den＝`totals.functions` |
+| `findings` | 每個被計到的項目一筆：`long_file`（value＝行數，`function` 是 `null`）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`dup_windows`（每個至少含一個被計到的視窗的檔各一筆，value＝該檔含有的被計到的相異視窗數，`function` 是 `null`）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
 | `applicable` | `src` 下有任何 `.py` |
+
+範例裡：`deep_functions` 1 筆、`long_functions` 1 筆（同一個函式兩項都中，各記一次）；`b.py` 與 `c.py` 共有 3 個相異 6 行視窗，所以 `dup_windows` 是 3，兩檔各一筆 value 3；`smell_events`＝0＋1＋1＋0＋3＝5。
 
 門檻（1000、50、4、6 行、5 行）與 `diff` 的事件定義相同，所以兩個命令的數字可以對照。
 
@@ -214,6 +248,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
   "schema_version": 1,
   "ticket_ref_keywords": ["closes", "close", "closed", "fixes", "fix", "fixed", "resolves", "resolve", "resolved", "refs", "ref"],
   "verdict_sources": ["comments"],
+  "github_review_role": "審查",
   "verdict_pattern": "^(?P<role>\\S*審查)：(?P<model>\\S+) 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})）",
   "review_roles": ["審查"],
   "pass_verdicts": ["可以 merge", "通過"],
@@ -225,13 +260,17 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 ```
 
 - `ticket_ref_keywords`：PR 標題或本文中，`<keyword>[:]? <ref>`（不分大小寫）裡的 `<ref>` 指到這張 ticket（同 repo 的 `#N`、`owner/repo#N`、或 issue URL）就屬於這張 ticket。
-- `verdict_sources`：`comments`（留言第一行套 `verdict_pattern`）、`reviews`（GitHub review：`APPROVED`→pass、`CHANGES_REQUESTED`→fail、其他不算結論；head＝`commit_id`）。可兩個都開。
-- `review_roles`：只有 `role` 在這個清單的結論算進審查指標（預設不含「結構審查」；架構審查另計是 §8 Q6）。
+- `verdict_sources`：非空、不重複，元素是 `comments`、`reviews` 之一（否則 `config_bad_shape`）。`comments`：留言第一行套 `verdict_pattern`，不中的留言不算結論。`reviews`：GitHub 正式 review，`APPROVED`→pass、`CHANGES_REQUESTED`→fail，`COMMENTED`、`DISMISSED` 不算結論（不進 V，也不是 `other`）；at＝`submitted_at`，head＝`commit_id`。可兩個都開。
+- `github_review_role`：GitHub 正式 review 沒有角色字，一律當成這個角色，再和其他結論一樣經過 `review_roles` 過濾（沒有豁免）。預設 `"審查"`，所以開了 `reviews` 時正式 review 算進審查指標；不想算就改成不在 `review_roles` 的字。
+- `review_roles`：只有 `role` 在這個清單的結論算進審查指標，來源是 input、留言或正式 review 都一樣（預設不含「結構審查」；架構審查另計是 §8 Q6）。
 - `verdict` 文字去頭尾空白後完全比對 `pass_verdicts`／`fail_verdicts`；都不中是 `other`。
 - `ci_workflows`：`null`＝全部 workflow；否則只看列出的名字。
-- 輸出記 `config_digest`＝`sha256(json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=True))`，換了慣例看得出來。
+- `--config` 要給齊上面每一個鍵（缺鍵是 `config_bad_shape`，不和內建值合併）；不認得的鍵照 §3.0 忽略。
+- 輸出記 `config_digest`＝`"sha256:"`＋`sha256(json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=True))` 的 64 碼小寫十六進位；`config` 只含認得的鍵（含 `kind`、`schema_version`），所以多了不認得的鍵不改 digest。換了慣例看得出來。
 
 ### 3.6 `taskquality score --json` 的輸出
+
+下面是 §3.1 快照＋§3.3 端到端 input＋內建 config 的輸出（`config_digest` 實際是 64 碼十六進位，這裡省略）：
 
 ```json
 {
@@ -244,7 +283,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
   "prs": [
     {"pr": "acme/widgets#21", "state": "merged", "created_at": "2030-01-02T03:00:00Z", "merged_at": "2030-01-02T05:00:00Z",
      "verdicts_source": "comments", "verdicts": 2, "first_review_pass": false, "fix_rounds": 1, "re_reviews": 1,
-     "approved_head_stale": false, "ci_first_head": "0000000cccccccccccccccccccccccccccccccc", "ci_first_green": false,
+     "approved_head_stale": false, "ci_first_head": "0000000ccccccccccccccccccccccccccccccccc", "ci_first_green": false,
      "rework": false, "rework_source": "derived"}
   ],
   "excluded_prs": [{"pr": "acme/widgets#30", "reason": "no_ticket_ref"}],
@@ -262,13 +301,37 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
                        "cache_write_tokens": null, "cost_micro_usd": 410000}},
   "counters": {"compactions": 2, "sessions": 3},
   "clean": false,
-  "missing": [{"field": "usage.totals.cache_write_tokens", "reason": "input_null"}],
+  "missing": [{"field": "usage.by_model[vendor,model-y].cache_write_tokens", "reason": "input_null"},
+              {"field": "usage.totals.cache_write_tokens", "reason": "input_null"}],
   "warnings": []
 }
 ```
 
+手算（§4）：#21 的 V＝(fail@0000000 04:00, pass@1111111 04:50)，`verdicts` 2；v1 是 fail → `first_review_pass` false；fail 1 筆 → `fix_rounds` 1；第 2 筆 head 與第 1 筆不同 → `re_reviews` 1；最後一筆 pass 的 `1111111` 是最終 head `1111111aaa…` 的前綴 → `approved_head_stale` false。CI：attempt 1 中最早的是 9001（03:01，head `0000000ccc…`），那個 head 上唯一的 run 是 failure → `ci_first_green` false。標題、本文沒有返工關鍵字 → `rework` false。週期：02:00（`started_at`）到 05:00＝10800 秒。`fix_rounds` 1 → `clean` false。
+
+兩個變化（各自只改一處，用來核對 §4.1、§4.5）：
+- input 加上 §3.3 的 `prs` 覆寫：`verdicts_source` 與 `rework_source` 都變成 `"input"`；那兩筆結論與留言相同，所以其他值都不變。
+- config 的 `verdict_sources` 改成 `["comments", "reviews"]`：review 601 以 `github_review_role`（`審查`）加入 V 成第 3 筆（pass@`1111111aaa…`，04:55）。`verdicts_source` 變成 `"comments+reviews"`、`verdicts` 變成 3；第 3 筆與第 2 筆的 head 互為前綴，`re_reviews` 仍是 1；其他值不變（`config_digest` 當然會變）。
+
+每個 PR 一筆（只含屬於 ticket 的 PR）：
+
+| 欄位 | 值 |
+|---|---|
+| `state` | `merged`／`open`／`closed_unmerged` |
+| `verdicts_source` | V 從哪裡來：input 有 `prs.<id>.verdicts` 這個鍵（含空陣列、含 `null`）→ `"input"`；否則是 config 開了的來源，依 `comments`、`reviews` 的固定順序以 `+` 相連：`"comments"`、`"reviews"`、`"comments+reviews"`。記的是**去哪裡找**，不是找到了沒有：沒找到任何結論時照樣是這個值，`verdicts` 是 0。所以它永遠不是 `null` |
+| `verdicts` | V 的筆數（`review_roles` 過濾之後）；input 給 `null` 時是 `null` |
+| `first_review_pass`、`fix_rounds`、`re_reviews`、`approved_head_stale` | §4.2～§4.4 |
+| `ci_first_head` | §4.6；沒有 run 時 `null` |
+| `ci_first_green` | §4.6 |
+| `rework`、`rework_source` | §4.5；`rework_source` ∈ `"input"`／`"derived"` |
+
 排序：`prs`、`excluded_prs` 依 PR 識別；`usage.by_model` 依 (`provider`, `model`)；`missing` 依 (`field`, `reason`)；`warnings` 依字串。
-`usage`：依 (provider, model) 加總；任一筆是 `null`，那一格就是 `null`。`counters`：原樣。沒給都是 `null`。
+`usage`：依 (provider, model) 加總；任一筆是 `null`（或缺那個鍵），那一格就是 `null`。`counters`：原樣。沒給 `usage`／`counters` 時，各自整個是 `null`。
+
+`missing`：
+- 哪些 `null` 要列：指標值與導入方的值，也就是每 PR 的 `verdicts`、`first_review_pass`、`fix_rounds`、`re_reviews`、`approved_head_stale`、`ci_first_green`、`rework`；`metrics` 的各項；`usage` 的每一格（或整個 `usage`）；`counters` 的每一個（或整個 `counters`）；`clean`。說明用的欄位（`merged_at`、`ci_first_head`、`cycle_basis`）是 `null` 時不列。
+- `field` 的寫法：從輸出的根開始，物件用 `.` 接鍵名；陣列元素用方括號寫**該元素的識別**，不用索引：`prs[acme/widgets#21].fix_rounds`、`usage.by_model[vendor,model-y].cache_write_tokens`（`[provider,model]`）。整個是 `null` 時寫到那一層為止：`usage`、`counters`、`metrics.cycle_seconds`、`clean`。
+- ticket 層的值因為某個 PR 的 `null` 而變成 `null` 時，ticket 層那一項也各列一筆，`reason` 沿用 PR 層的（不同的 reason 各一筆，相同的只列一次）。`clean` 同理，見 §4.10。
 
 ## 4. 指標定義
 
@@ -276,25 +339,28 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 ### 4.1 審查結論的辨認
 
-一個 PR 的結論序列 V＝(v1, v2, …)，來源依序取第一個有的：input 的 `prs.<id>.verdicts` → config `verdict_sources`（兩個都開就合併，依時刻排）。每筆是 (at, role, verdict ∈ pass/fail/other, head)。只留 `role` ∈ `review_roles` 的。head 比對用前綴（7 碼對 40 碼）。
+一個 PR 的結論序列 V＝(v1, v2, …)，每筆是 (at, role, verdict ∈ pass/fail/other, head)。
+- 來源：input 有 `prs.<id>.verdicts` 這個鍵就只用它（`null` → 該 PR 的審查各項是 `null`，`input_null`）；沒有就用 config `verdict_sources` 開了的來源。兩個都開就合併，依 (at, 來源（`comments` 在前）, 留言或 review 的 `id`) 排。`verdicts_source` 的值見 §3.6。
+- 角色：留言的 role 取 `verdict_pattern` 的 `role` 群組；正式 review 的 role 一律是 `github_review_role`；input 的 role 照給的。三種來源都只留 `role` ∈ `review_roles` 的，沒有例外。
+- head 比對用前綴（7 碼對 40 碼）。
 
 團隊現行慣例（PR 留言第一行「審查：<模型> 結論：可以 merge（head <7碼>）」，另有「結構審查：… 結論：通過（…）」）就是內建預設。**不夠通用的地方**已改成 config：角色字、結論字、正規式、是否讀 GitHub review。另一個不足不是格式而是**慣例本身**：「要修」那幾輪常不貼在 PR 上（見 §0、§8 Q2）。
 
 ### 4.2 審查一次通過率 `review_first_pass`
 
-- 每 PR：V 非空時 `first_review_pass` ＝ (v1.verdict == pass)；V 空時 `null`（原因 `no_verdict`），該 PR 計入 `unreviewed_merged_prs`。
-- ticket：`{num: first_review_pass 為 true 的 merged PR 數, den: V 非空的 merged PR 數}`；den＝0 時整個是 `null`（`no_verdict`）。
+- 每 PR：V 非空時 `first_review_pass` ＝ (v1.verdict == pass)，但 v1 是 `other` 時 `null`（`unrecognized_verdict`）；V 空時 `null`（`no_verdict`），merged 的話計入 `unreviewed_merged_prs`。
+- ticket：`{num: first_review_pass 為 true 的 merged PR 數, den: V 非空的 merged PR 數}`；V 非空的 merged PR 中任一是 `null` → 整個 `null`（沿用它的 reason）；den＝0 → `null`（沒有 merged PR 時 `no_merged_pr`，否則 `no_verdict`）。
 
 ### 4.3 要修輪數 `fix_rounds`
 
 - 每 PR：V 中 verdict＝fail 的筆數。V 中有 `other` 時 `null`（`unrecognized_verdict`；不猜它算不算要修）。V 空時 `null`（`no_verdict`）。
-- ticket：merged PR 的加總，V 空的跳過；跳過以外任一 PR 是 `null` 就是 `null`。
+- ticket：merged PR 的加總，V 空的跳過；跳過以外任一 PR 是 `null` 就是 `null`；沒有 V 非空的 merged PR → `null`（理由同 §4.2 的 den＝0）。
 
 ### 4.4 head 變動後重審次數 `re_reviews`，與核准後 head 又變 `approved_head_stale`
 
 - 每 PR：`re_reviews` ＝ i ≥ 2 且 vi.head 與 v(i−1).head 不同（互不為前綴）的筆數。V 空 → `null`。
-- 每 PR：`approved_head_stale` ＝ V 最後一筆是 pass 且它的 head 不是 PR 最終 `head_sha` 的前綴（核准的不是 merge 的那個 head）。V 空或最後一筆不是 pass → `null`。
-- ticket：`re_reviews` 加總（規則同 §4.3）；`approved_head_stale` ＝ true 的 PR 數。
+- 每 PR：`approved_head_stale` ＝ V 最後一筆是 pass 且它的 head 不是 PR 最終 `head_sha` 的前綴（核准的不是 merge 的那個 head）。最後一筆是 fail → false（沒有核准，談不上過期）；最後一筆是 `other` → `null`（`unrecognized_verdict`）；V 空 → `null`（`no_verdict`）。
+- ticket：`re_reviews` 加總；`approved_head_stale` ＝ true 的 merged PR 數。兩者跳過與 `null` 的規則都同 §4.3。
 
 ### 4.5 返工 PR 數 `rework_prs`
 
@@ -304,34 +370,46 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 ### 4.6 CI 首次綠率 `ci_first_green`
 
-- 每 PR：取 `run_attempt == 1` 且 workflow 在 `ci_workflows` 內的 run；其中 `created_at` 最早的那個 run 的 `head_sha` 是 `ci_first_head`。看 `ci_first_head` 上所有 attempt 1 的 run：全部 `completed` 且 `conclusion` ∈ `ci_green_conclusions` → true；有任一 completed 但不在清單 → false；否則（還有沒跑完的）→ `null`（`ci_incomplete`）。沒有任何 run → `null`（`no_ci_runs`），計入 `prs_without_ci`。重跑（attempt ≥ 2）不算首次。
-- ticket：`{num: true 的 merged PR 數, den: true 或 false 的 merged PR 數}`；任一 merged PR 是 `ci_incomplete` → 整個 `null`；den＝0 → `null`。
+- 每 PR：取 `run_attempt == 1` 且 workflow 在 `ci_workflows` 內的 run；其中依 §3.1 `ci_runs` 的排序鍵 (`created_at`, `run_id`, `run_attempt`) 排在第一的那個 run 的 `head_sha` 是 `ci_first_head`（同一秒有多個時取 `run_id` 小的，結果不看快照裡的陣列順序）。看 `ci_first_head` 上所有 attempt 1 的 run：全部 `completed` 且 `conclusion` ∈ `ci_green_conclusions` → true；有任一 completed 但不在清單 → false；否則（還有沒跑完的）→ `null`（`ci_incomplete`）。沒有任何 run → `null`（`no_ci_runs`），計入 `prs_without_ci`。重跑（attempt ≥ 2）不算首次。
+- ticket：`{num: true 的 merged PR 數, den: true 或 false 的 merged PR 數}`；任一 merged PR 是 `ci_incomplete` → 整個 `null`（`ci_incomplete`）；den＝0 → `null`（沒有 merged PR 時 `no_merged_pr`，否則 `no_ci_runs`）。
 
 ### 4.7 開工到合併時間 `cycle_seconds`
 
-- 起點：input `started_at`（`cycle_basis: "input_started_at"`）；沒有就用屬於 ticket 的 PR 中最早的 `created_at`（`"first_pr_created"`）。
+- 起點：input `started_at`（`cycle_basis: "input_started_at"`）；沒有就用屬於 ticket 的 PR 中最早的 `created_at`（`"first_pr_created"`）；兩者都沒有（沒有 PR 也沒有 `started_at`）時 `cycle_basis` 是 `null`。
 - 終點：merged PR 中最晚的 `merged_at`。
-- 有 `open` 的 PR，或沒有 merged PR → `null`（`pr_open`／`no_merged_pr`）。終點早於起點 → `null`（`bad_interval`）。
+- 有 `open` 的 PR → `null`（`pr_open`；有 open 時優先用這個 reason）；否則沒有 merged PR → `null`（`no_merged_pr`）。終點早於起點 → `null`（`bad_interval`）。
 - 值＝終點 − 起點，整數秒。
 
 ### 4.8 缺值的總則
 
 1. **沒有資料**（PR 沒有任何結論、沒有任何 CI run）：該 PR 不進分母，另外計數（`unreviewed_merged_prs`、`prs_without_ci`）。沒被審就 merge 本身是訊號，不藏起來，也不讓整張變未定。
 2. **有資料但判不出來**（不認得的結論字、CI 沒跑完、input 明給 `null`）：該項是 `null`，往上傳到 ticket 的那一項。
-3. 每個 `null` 都在 `missing` 有一筆 `{field, reason}`；reason ∈ `input_missing`、`input_null`、`no_verdict`、`unrecognized_verdict`、`no_ci_runs`、`ci_incomplete`、`pr_open`、`no_merged_pr`、`bad_interval`。
+3. 每個 `null`（範圍與 `field` 寫法見 §3.6）都在 `missing` 有一筆 `{field, reason}`；reason ∈ `input_missing`、`input_null`、`no_verdict`、`unrecognized_verdict`、`no_ci_runs`、`ci_incomplete`、`pr_open`、`no_merged_pr`、`bad_interval`。
 4. 從不把 `null` 當 0 加。
 
 ### 4.9 整張 ticket 的狀態 `status`
 
-- `no_prs`：沒有屬於 ticket 的 PR。`metrics` 中所有值為 `null`，計數為 0。
-- `in_progress`：有 `open` 的 PR。各項照算（只算已 merge 的），但 `cycle_seconds` 與 `clean` 是 `null`。
+- `no_prs`：沒有屬於 ticket 的 PR。
+- `in_progress`：有 `open` 的 PR。各項照算（只算已 merge 的），但 `cycle_seconds` 與 `clean` 是 `null`（`pr_open`）。
+- `no_merged_pr`：沒有 open，也沒有 merged（全部 `closed_unmerged`）。
 - `complete`：沒有 open、至少一個 merged。
+
+`no_prs`、`no_merged_pr`（以及沒有 merged 的 `in_progress`）時，`metrics` 照上面各節的規則就是：計數（`prs_*`、`unreviewed_merged_prs`、`prs_without_ci`、`rework_prs`）照實際數（`no_prs` 時都是 0）；比率與加總（`review_first_pass`、`fix_rounds`、`re_reviews`、`approved_head_stale`、`ci_first_green`）是 `null`（`no_merged_pr`）；`cycle_seconds` 是 `null`（`no_merged_pr`；`in_progress` 時是 `pr_open`）。
 
 ### 4.10 分數怎麼合成（建議）
 
 推薦（本設計的預設）：**只輸出分項，不加權**，加一個是非判定：
 
-- `clean`：`status == complete` 且 `review_first_pass.num == den > 0`、`unreviewed_merged_prs == 0`、`fix_rounds == 0`、`approved_head_stale == 0`、`ci_first_green.num == den > 0`、`rework_prs == 0`。用到的任一項是 `null` → `null`。（`re_reviews` 不在條件內：一次就過時，它必然是 0。）
+- `clean`：`status` 不是 `complete` → `null`（`in_progress` 的 reason 是 `pr_open`，其他是 `no_merged_pr`）。`complete` 時看下面七個條件，**有任一條確定不成立就是 false**（不管別項是不是 `null`）；全部成立是 true；沒有不成立、但有條件因為用到的項是 `null` 而判不出來 → `null`，`missing` 對每個判不出來的項列一筆 `{field: "clean", reason: 該項的 reason}`。
+  1. `unreviewed_merged_prs == 0`
+  2. `prs_without_ci == 0`
+  3. `review_first_pass.num == review_first_pass.den`
+  4. `fix_rounds == 0`
+  5. `approved_head_stale == 0`
+  6. `ci_first_green.num == ci_first_green.den`
+  7. `rework_prs == 0`
+
+  `complete` 至少有一個 merged PR，所以 `review_first_pass` 的 den＝0 一定代表全部 merged PR 都沒被審，此時條件 1 已不成立、`clean` 是 false；`ci_first_green` 的 den＝0 且沒有 `ci_incomplete` 時同理由條件 2 判 false。也就是「1 個 PR 沒審」與「2 個 PR 中 1 個沒審」都是 false，不會一個 false 一個 `null`。（`re_reviews` 不在條件內：一次就過時，它必然是 0。）
 
 取捨：
 
@@ -390,10 +468,10 @@ taskquality.cli ──> taskquality.fetch ──> gh（subprocess，runner 可�
 
 ### PR-A：`qmetrics repo`
 
-- **C-A1** 合成 repo（`src` 有一個 60 行函式、一個深度 4 的函式、兩個檔共有 6 行以上相同的程式、兩個 AST 相同的 ≥5 行函式；`tests` 有 3 個 `test_*`）→ `--json` 符合 §3.4：`long_functions == 1`、`deep_functions == 1`、`dup_windows ≥ 1`、`ast_dup_functions == 1`、`tests == 3`、`smell_events` 是五項加總、`ratios` 的 den 是 `functions` 或 `files`。
+- **C-A1** 合成 repo（`src` 有一個 60 行函式、一個深度 4 的函式、兩個檔共有 6 行以上相同的程式、兩個 AST 相同的 ≥5 行函式；`tests` 有 3 個 `test_*`）→ `--json` 符合 §3.4：`long_functions == 1`、`deep_functions == 1`、`dup_windows ≥ 1`、`ast_dup_functions == 1`、`tests == 3`、`smell_events` 是五項加總、`ratios` 的 den 照 §3.4 的逐項表（`long_files` 是 `files`，其餘三項是 `functions`），`ratios` 沒有 `dup_windows`、`smell_events`。
 - **C-A2** 1001 行的檔 → `long_files == 1`；1000 行 → 0。51 行函式算長、50 行不算；深度 3 不算、4 算（與 `diff` 的 `crossing_*` 門檻相同）。
 - **C-A3** 量的是 `--rev` 的樹：工作目錄有未 commit 的改動時輸出不變；`--rev` 指舊 commit 時量舊樹。
-- **C-A4** 同一個 commit 跑兩次 → 位元組相同；`findings` 依 (`kind`, `file`, `function`, `value`) 排序；輸出沒有浮點數。
+- **C-A4** 同一個 commit 跑兩次 → 位元組相同；`dup_windows` 的 findings 是共有視窗的每個檔各一筆；`findings` 依 (`kind`, `file`, `function`, `value`) 排序；輸出沒有浮點數。
 - **C-A5** `src` 有一個語法錯誤的檔 → `totals.functions`、`counts`、`ratios`、`findings` 是 `null`，`files`、`lines` 照算，`parse_failures` 有那個檔（scope `src`）；exit 0。`tests` 有語法錯誤 → 只有 `totals.tests` 是 `null`。
 - **C-A6** `src` 下沒有 `.py` → `applicable == false`、計數 0、`ratios` 全 `null`（den＝0）。
 - **C-A7** 淺 clone（depth 1）→ `repo` 成功；同一個淺 clone 跑 `diff` 仍是 `shallow_repository`。有 grafts → `grafts_present`。`--rev` 解不出來 → exit 2 `unknown_revision`，stderr 一行，stdout 空。
@@ -401,16 +479,18 @@ taskquality.cli ──> taskquality.fetch ──> gh（subprocess，runner 可�
 
 ### PR-B1：`taskquality score` 與 `defaults`
 
-- **C-B1** 合成快照＋input＋config → 輸出符合 §3.6，跑兩次位元組相同；輸出中沒有浮點數。
+- **C-B1** §3.1 快照＋§3.3 端到端 input＋內建 config → 輸出除 `config_digest` 外與 §3.6 的範例相同，跑兩次位元組相同；輸出中沒有浮點數。§3.6 之後的兩個變化也各有一個測試。
 - **C-B2** 關聯：本文有 `Closes #11` 的算；只有 `see #11`（關鍵字不在清單）的進 `excluded_prs`，reason `no_ticket_ref`；`owner/repo#11` 與 issue URL 都認得。
 - **C-B3** 結論辨認：預設 pattern 認得「審查：m 結論：可以 merge（head abc1234）」（pass）、「…結論：要修（…）」（fail）；「結構審查：…」不進審查指標；結論字不在兩個清單 → `other`，該 PR 的 `fix_rounds` 是 `null`、`missing` 有 `unrecognized_verdict`。
-- **C-B4** input 有 `prs.<id>.verdicts` → 取代留言結論，`verdicts_source == "input"`。
-- **C-B5** `review_first_pass`：PR1 (fail, pass)、PR2 (pass) → `{num:1, den:2}`；沒有結論的 merged PR → 不進 den、`unreviewed_merged_prs == 1`。
-- **C-B6** `re_reviews`：heads (aaaaaaa, aaaaaaa, bbbbbbb) → 1；7 碼與 40 碼前綴相同視為同一個 head。`approved_head_stale`：最後一筆 pass 的 head 不是最終 head 的前綴 → 該 PR true。
-- **C-B7** CI：首個 head 的 attempt 1 有一個 failure → false；全部 success/skipped → true；首個 head 上還有未完成的 → ticket `ci_first_green` 是 `null`、reason `ci_incomplete`；attempt 2 的成功不改變結果；沒有 run → 計入 `prs_without_ci`。
+- **C-B4** 結論來源：input 有 `prs.<id>.verdicts` → 取代留言結論，`verdicts_source == "input"`（空陣列也是 `"input"`、`verdicts == 0`；`null` → 審查各項 `null`、`input_null`）。沒有 input 結論時 `verdicts_source` 依 config 是 `"comments"`／`"reviews"`／`"comments+reviews"`，沒找到任何結論時仍是那個值、`verdicts == 0`。`verdict_sources` 空或含其他字 → `config_bad_shape`。
+- **C-B4a** 正式 review：`APPROVED`／`CHANGES_REQUESTED` 以 `github_review_role` 的角色進 V；`github_review_role` 改成不在 `review_roles` 的字 → 不進 V；`COMMENTED` 不進 V、不是 `other`。留言與 review 同一秒 → 留言在前。
+- **C-B5** `review_first_pass`：PR1 (fail, pass)、PR2 (pass) → `{num:1, den:2}`；沒有結論的 merged PR → 不進 den、`unreviewed_merged_prs == 1`；v1 是 `other` → 該 PR 與 ticket 都 `null`（`unrecognized_verdict`）。
+- **C-B6** `re_reviews`：heads (aaaaaaa, aaaaaaa, bbbbbbb) → 1；7 碼與 40 碼前綴相同視為同一個 head。`approved_head_stale`：最後一筆 pass 的 head 不是最終 head 的前綴 → 該 PR true；最後一筆 fail → false；最後一筆 `other` → `null`（`unrecognized_verdict`）。
+- **C-B7** CI：首個 head 的 attempt 1 有一個 failure → false；全部 success/skipped → true；首個 head 上還有未完成的 → ticket `ci_first_green` 是 `null`、reason `ci_incomplete`；attempt 2 的成功不改變結果；沒有 run → 計入 `prs_without_ci`；同一秒兩個不同 head 的 attempt 1 run → `ci_first_head` 是 `run_id` 小的那個的 head，快照陣列順序對調結果不變。
 - **C-B8** 返工推斷：PR2 在 PR1 merge 之後開、本文「修正 #21」→ rework true；本文只有「接 #21」→ false；PR2 在 PR1 merge 之前開 → false；input 給 `rework` → 取代推斷，`rework_source == "input"`。
-- **C-B9** 週期：有 `started_at` → 用它；沒有 → 最早 PR 的 `created_at`；有 open PR → `null`（`pr_open`），`status == "in_progress"`，`clean` 是 `null`。
-- **C-B10** 缺值：沒給 `--input` → `usage`、`counters` 是 `null`，`missing` 有 `input_missing`；input 某 token 是 `null` → 該格 `null`（`input_null`），不是 0。
+- **C-B9** 週期與狀態：有 `started_at` → 用它；沒有 → 最早 PR 的 `created_at`；有 open PR → `null`（`pr_open`），`status == "in_progress"`，`clean` 是 `null`（`pr_open`）；全部 `closed_unmerged` → `status == "no_merged_pr"`、比率與加總 `null`（`no_merged_pr`）；沒有 PR → `status == "no_prs"`、計數 0。
+- **C-B9a** `clean`：唯一的 merged PR 沒有結論 → false（不是 `null`）；兩個 merged PR 一個沒結論、一個一次通過 → false；唯一的 merged PR 沒有 CI run → false；`fix_rounds` 因 `other` 是 `null`、其他條件都成立 → `null`，`missing` 有 `{field: "clean", reason: "unrecognized_verdict"}`；同樣的 `null` 再加上 `rework_prs == 1` → false。
+- **C-B10** 缺值：沒給 `--input` → `usage`、`counters` 是 `null`，`missing` 有 `{field: "usage", reason: "input_missing"}` 與 `counters` 那一筆；input 某 token 是 `null` → by_model 那一格與 totals 那一格都是 `null`，`missing` 各一筆（`input_null`，`field` 照 §3.6 的寫法），不是 0。PR 層的 `null` 寫成 `prs[<PR 識別>].<欄位>`，往上傳時 `metrics.<欄位>` 也有一筆同 reason。
 - **C-B11** 錯誤：快照不是 JSON → exit 2 `file_not_json`；`kind` 不對 → `snapshot_bad_shape`；快照與 input 的 `ticket` 不同 → `ticket_mismatch`；時刻帶 `+08:00` → `bad_time`；config regex 壞掉 → `bad_pattern`。
 - **C-B12** `taskquality defaults` 印出的 JSON 當 `--config` 用 → 與不帶 `--config` 的輸出位元組相同（含 `config_digest`）。
 - **C-B13** `score` 不讀時鐘、不連網：測試把 `time.time`、`datetime.now`、`socket.socket` 換成會丟錯的替身，`score` 仍成功。
@@ -420,7 +500,7 @@ taskquality.cli ──> taskquality.fetch ──> gh（subprocess，runner 可�
 - **C-F1** 注入的 runner 回錄好的合成回應 → 快照符合 §3.1，各陣列照規定排序；同樣回應不同順序 → 位元組相同。
 - **C-F2** 分頁：runner 回兩頁 → 全部收進快照；第二頁失敗 → exit 2 `incomplete_pagination`，`--out` 的檔案不存在（原本有檔時不被覆寫）。
 - **C-F3** 限流：runner 先回 429（帶 `Retry-After: 1`）再回成功 → 成功，睡眠函式被叫一次、引數 1；連續 4 次 429 → `rate_limited`。睡眠函式可注入，測試不真的睡。
-- **C-F4** 留言只存第一行；快照裡沒有作者名、帳號、抓取時刻。
+- **C-F4** 留言只存第一行；review 不存本文；快照裡沒有作者名、帳號、抓取時刻。
 - **C-F5** `gh` 不存在 → `gh_unavailable`；issue 不存在 → `not_found`。
 - **C-F6** `--search-repo` 給了 → 其他 repo 的候選 PR 不進快照；`--pr` 指定的一定進。
 
