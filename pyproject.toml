@@ -8,6 +8,7 @@ dependencies = []
 
 [project.scripts]
 qmetrics = "qmetrics.cli:main"
+taskquality = "taskquality.cli:main"
 
 [dependency-groups]
 dev = ["pytest"]
@@ -18,3 +19,6 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.build-backend]
+module-name = ["qmetrics", "taskquality"]
