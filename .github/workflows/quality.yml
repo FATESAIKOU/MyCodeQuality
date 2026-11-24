@@ -1,4 +1,4 @@
-# Reusable workflow: deterministic diff metrics (qmetrics), report-only (Q0).
+# Reusable workflow: deterministic diff metrics (qmetrics), report-only (Q0); on push also the whole-repo metrics (qmetrics repo).
 # Metric values never fail the job unless the caller opts in with fail-on: q1. It fails on tool errors (qmetrics exit != 0) and infrastructure
 # errors (checkout, pip install, file redirection, step summary, artifact upload).
 name: quality
@@ -78,11 +78,30 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Measure whole repo (report only)
+        if: ${{ github.event_name == 'push' }}
+        env:
+          SHA: ${{ github.sha }}
+          SRC: ${{ inputs.src }}
+          TESTS: ${{ inputs.tests }}
+        run: |
+          set -euo pipefail
+          qmetrics repo --rev "$SHA" --src "$SRC" --tests "$TESTS" --json > qmetrics-repo.json
+          qmetrics repo --rev "$SHA" --src "$SRC" --tests "$TESTS" > qmetrics-repo.txt
+          {
+            echo "### qmetrics repo (report only)"
+            echo '```'
+            cat qmetrics-repo.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: qmetrics
-          path: qmetrics.json
+          path: |
+            qmetrics.json
+            qmetrics-repo.json
           if-no-files-found: ignore
 
       - name: Gate (Q1)
