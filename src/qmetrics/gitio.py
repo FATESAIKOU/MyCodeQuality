@@ -107,12 +107,12 @@ class Git:
         return out
 
 
-def preflight(git):
+def preflight(git, history=True):
     """(g) history must be complete and clean. Returns the warning codes."""
     if os.path.exists(git.git_path("info/grafts")):
         raise ToolError("grafts_present",
                         "info/grafts exists: local history was rewritten, refusing to pick a base")
-    if git.text("rev-parse", "--is-shallow-repository") == "true":
+    if history and git.text("rev-parse", "--is-shallow-repository") == "true":
         raise ToolError("shallow_repository",
                         "shallow repository: a full history is required (fetch-depth: 0)")
     warnings = []
