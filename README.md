@@ -66,11 +66,12 @@ qmetrics repo [--repo PATH] [--rev REV] [--src src] [--tests tests] [--json]
 Without `--json`, prints a human-readable summary. With `--json`, prints a deterministic JSON object following design §3.4:
 
 - `applicable`: boolean, `true` if any `.py` file exists under `src`, `false` otherwise.
-- `totals`: `files` (.py count), `lines` (total line count), `functions` (function/method count), `tests` (count of `test_*` functions in `tests`).
-- `counts`: `long_files` (> 1000 lines), `long_functions` (> 50 lines), `deep_functions` (nesting depth >= 4), `ast_dup_functions` (AST-identical functions >= 5 lines, grouped: size - 1 summed), `dup_windows` (6-line duplicate code windows appearing across >= 2 files), and `smell_events` (sum of the five categories).
-- `ratios`: `{num, den}` ratios for `long_files` (den: `totals.files`), `long_functions`, `deep_functions`, and `ast_dup_functions` (den: `totals.functions`). If denominator is 0, the ratio is `null`. No floating-point numbers are output.
-- `findings`: detail list for each detected issue (`long_file`, `long_function`, `deep_function`, `ast_dup_function`, `dup_windows`), sorted deterministically by `(kind, file, function, value)`.
-- `parse_failures`: files that failed to parse (`{file, scope}`). If any file in `src` fails to parse, `totals.functions`, `counts`, `ratios`, and `findings` are `null` (fail-closed); if in `tests`, `totals.tests` is `null`.
+- `totals`: `files` (.py count), `lines` (total line count), `functions` (function/method count), `tests` (count of `test_*` functions in `tests`), `cognitive_units` (scoring units: functions not nested in another function) and `cognitive` (sum of their cognitive complexity).
+- `counts`: `long_files` (> 1000 lines), `long_functions` (> 50 lines), `deep_functions` (nesting depth >= 4), `ast_dup_functions` (AST-identical functions >= 5 lines, grouped: size - 1 summed), `dup_windows` (6-line duplicate code windows appearing across >= 2 files), `complex_functions` (cognitive complexity > 15 per scoring unit; not part of `smell_events`), and `smell_events` (sum of the five categories).
+- `ratios`: `{num, den}` ratios for `long_files` (den: `totals.files`), `long_functions`, `deep_functions`, and `ast_dup_functions` (den: `totals.functions`), and `complex_functions` (den: `totals.cognitive_units`, which is not `totals.functions`). If denominator is 0, the ratio is `null`. No floating-point numbers are output.
+- `findings`: detail list for each detected issue (`long_file`, `long_function`, `deep_function`, `ast_dup_function`, `complex_function`, `dup_windows`), sorted deterministically by `(kind, file, function, value)`.
+- Cognitive complexity is a self-written approximation over Python's `ast` (not SonarQube's numbers: parenthesized boolean sequences, `match` guards, lambdas and recursion are counted differently or not at all).
+- `parse_failures`: files that failed to parse (`{file, scope}`). If any file in `src` fails to parse, `totals.functions`, `totals.cognitive_units`, `totals.cognitive`, `counts`, `ratios`, and `findings` are `null` (fail-closed); if in `tests`, `totals.tests` is `null`.
 - `warnings`: array of preflight check warnings (such as `alternates_present`, `replace_refs_present`).
 
 ## Limits

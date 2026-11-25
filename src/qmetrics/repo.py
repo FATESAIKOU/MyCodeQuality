@@ -1,7 +1,9 @@
 """Repository-wide static code quality metrics at a single commit."""
 
 from collections import defaultdict
-from qmetrics import metrics
+from qmetrics import cognitive, metrics
+
+COMPLEX_THRESHOLD = 15  # a scoring unit above this cognitive complexity is a complex function
 
 
 def analyze(git, rev, src, tests):
@@ -54,6 +56,8 @@ def analyze(git, rev, src, tests):
             "lines": lines_count,
             "functions": None,
             "tests": tests_count,
+            "cognitive_units": None,
+            "cognitive": None,
         }
         return {
             "applicable": applicable,
@@ -70,6 +74,8 @@ def analyze(git, rev, src, tests):
             "lines": 0,
             "functions": 0,
             "tests": tests_count,
+            "cognitive_units": 0,
+            "cognitive": 0,
         }
         counts = {
             "long_files": 0,
@@ -78,12 +84,14 @@ def analyze(git, rev, src, tests):
             "ast_dup_functions": 0,
             "dup_windows": 0,
             "smell_events": 0,
+            "complex_functions": 0,
         }
         ratios = {
             "long_files": None,
             "long_functions": None,
             "deep_functions": None,
             "ast_dup_functions": None,
+            "complex_functions": None,
         }
         return {
             "applicable": False,
@@ -100,6 +108,9 @@ def analyze(git, rev, src, tests):
     window_files = defaultdict(set)
     shape_groups = defaultdict(list)
     all_funcs = []
+    cog_units = 0
+    cog_total = 0
+    complex_functions = 0
 
     for f in sorted(src_blobs):
         text = text_of(src_blobs[f])
@@ -125,6 +136,13 @@ def analyze(git, rev, src, tests):
                 findings.append({"kind": "deep_function", "file": f, "function": qname, "value": d})
             if sh is not None:
                 shape_groups[sh].append((f, qname))
+
+        for (qname, _), value in cognitive.scores(tree).items():
+            cog_units += 1
+            cog_total += value
+            if value > COMPLEX_THRESHOLD:
+                complex_functions += 1
+                findings.append({"kind": "complex_function", "file": f, "function": qname, "value": value})
 
     long_functions = sum(1 for _, _, fn_len, _, _ in all_funcs if fn_len > 50)
     deep_functions = sum(1 for _, _, _, d, _ in all_funcs if d >= 4)
@@ -164,6 +182,7 @@ def analyze(git, rev, src, tests):
         "ast_dup_functions": ast_dup_functions,
         "dup_windows": dup_windows,
         "smell_events": smell_events,
+        "complex_functions": complex_functions,
     }
 
     totals = {
@@ -171,6 +190,8 @@ def analyze(git, rev, src, tests):
         "lines": lines_count,
         "functions": len(all_funcs),
         "tests": tests_count,
+        "cognitive_units": cog_units,
+        "cognitive": cog_total,
     }
 
     ratios = {
@@ -178,6 +199,7 @@ def analyze(git, rev, src, tests):
         "long_functions": {"num": long_functions, "den": totals["functions"]} if totals["functions"] > 0 else None,
         "deep_functions": {"num": deep_functions, "den": totals["functions"]} if totals["functions"] > 0 else None,
         "ast_dup_functions": {"num": ast_dup_functions, "den": totals["functions"]} if totals["functions"] > 0 else None,
+        "complex_functions": {"num": complex_functions, "den": cog_units} if cog_units > 0 else None,
     }
 
     findings.sort(key=lambda x: (x["kind"], x["file"], x["function"] or "", x["value"]))
