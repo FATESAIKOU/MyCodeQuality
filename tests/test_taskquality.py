@@ -2365,3 +2365,208 @@ def test_validation_non_utf8_file(tmp_path):
     bad_utf8.write_bytes(b"\xff\xfe\x00\x00non-utf8-data")
     r = run_tq("score", "--snapshot", str(bad_utf8))
     assert_tool_error(r, "file_not_json")
+
+
+def test_validation_snapshot_ci_runs_conclusion_and_status_types(tmp_path):
+    """ci_runs conclusion must be str or null, and status must be str (issue #20 fix 中 1)."""
+    # 1. conclusion is list -> snapshot_bad_shape
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["conclusion"] = []
+    p = tmp_path / "snap_ci_conclusion_list.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 2. conclusion is dict -> snapshot_bad_shape
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["conclusion"] = {"fail": True}
+    p = tmp_path / "snap_ci_conclusion_dict.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 3. conclusion is int -> snapshot_bad_shape
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["conclusion"] = 123
+    p = tmp_path / "snap_ci_conclusion_int.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 4. status is null/None -> snapshot_bad_shape
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["status"] = None
+    p = tmp_path / "snap_ci_status_none.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 5. status is list -> snapshot_bad_shape
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["status"] = ["completed"]
+    p = tmp_path / "snap_ci_status_list.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 6. status is dict -> snapshot_bad_shape
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["status"] = {}
+    p = tmp_path / "snap_ci_status_dict.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 7. conclusion is null -> valid, exits 0
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["ci_runs"][0]["conclusion"] = None
+    p = tmp_path / "snap_ci_conclusion_none.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert r.returncode == 0
+
+
+def test_validation_input_usage_role_non_string(tmp_path):
+    """input usage[].role non-string (dict/list/int) raises input_bad_shape (issue #20 fix 中 2)."""
+    snap_p = tmp_path / "snap.json"
+    snap_p.write_text(json.dumps(GOLDEN_SNAPSHOT))
+
+    # 1. role is dict
+    inp = copy.deepcopy(GOLDEN_INPUT)
+    inp["usage"] = [{"provider": "p", "model": "m", "role": {}}]
+    p_inp = tmp_path / "inp_role_dict.json"
+    p_inp.write_text(json.dumps(inp))
+    r = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp))
+    assert_tool_error(r, "input_bad_shape")
+
+    # 2. role is list
+    inp = copy.deepcopy(GOLDEN_INPUT)
+    inp["usage"] = [{"provider": "p", "model": "m", "role": ["impl"]}]
+    p_inp = tmp_path / "inp_role_list.json"
+    p_inp.write_text(json.dumps(inp))
+    r = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp))
+    assert_tool_error(r, "input_bad_shape")
+
+    # 3. role is int
+    inp = copy.deepcopy(GOLDEN_INPUT)
+    inp["usage"] = [{"provider": "p", "model": "m", "role": 42}]
+    p_inp = tmp_path / "inp_role_int.json"
+    p_inp.write_text(json.dumps(inp))
+    r = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp))
+    assert_tool_error(r, "input_bad_shape")
+
+
+def test_validation_input_verdicts_missing_at(tmp_path):
+    """Input verdicts[] missing 'at' or 'at' is null raises input_bad_shape (issue #20 fix 低 3)."""
+    snap_p = tmp_path / "snap.json"
+    snap_p.write_text(json.dumps(GOLDEN_SNAPSHOT))
+
+    # missing "at" key
+    inp = copy.deepcopy(GOLDEN_INPUT)
+    inp["prs"] = {
+        "acme/widgets#21": {
+            "verdicts": [
+                {"role": "arch", "verdict": "pass", "head": "1111111"}
+            ]
+        }
+    }
+    p_inp = tmp_path / "inp_no_at.json"
+    p_inp.write_text(json.dumps(inp))
+    r = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp))
+    assert_tool_error(r, "input_bad_shape")
+
+    # "at": None
+    inp["prs"]["acme/widgets#21"]["verdicts"][0]["at"] = None
+    p_inp2 = tmp_path / "inp_at_none.json"
+    p_inp2.write_text(json.dumps(inp))
+    r2 = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp2))
+    assert_tool_error(r2, "input_bad_shape")
+
+
+def test_extract_verdicts_unparticipated_group_treated_as_non_matching(tmp_path):
+    """Named group in verdict_pattern not participating in match is treated as non-matching (issue #20 fix 低 4)."""
+    cfg = json.loads(run_tq("defaults").stdout)
+    # Alternation where '要修' does not capture 'verdict'
+    cfg["verdict_pattern"] = r"^(?P<role>\S*審查)：(?P<model>\S+) 結論：(?:(?P<verdict>可以 merge)|要修)（head (?P<head>[0-9a-f]{7,40})）"
+    p_cfg = tmp_path / "config.json"
+    p_cfg.write_text(json.dumps(cfg))
+
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    # Comment matches pattern, but group 'verdict' is None
+    snap["prs"][0]["comments"] = [
+        {"id": 1, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：m 結論：要修（head 1111111）"}
+    ]
+    p_snap = tmp_path / "snap.json"
+    p_snap.write_text(json.dumps(snap))
+
+    # Must exit 0 without AttributeError, and comment is treated as not matching
+    r = run_tq("score", "--snapshot", str(p_snap), "--config", str(p_cfg), "--json")
+    assert r.returncode == 0, f"Expected 0, got {r.returncode}, stderr: {r.stderr}"
+    data = json.loads(r.stdout)
+    assert data["prs"][0]["verdicts"] == 0
+
+    # Comment matches pattern with '可以 merge', group 'verdict' participates
+    snap["prs"][0]["comments"] = [
+        {"id": 2, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：m 結論：可以 merge（head 1111111）"}
+    ]
+    p_snap.write_text(json.dumps(snap))
+    r2 = run_tq("score", "--snapshot", str(p_snap), "--config", str(p_cfg), "--json")
+    assert r2.returncode == 0
+    data2 = json.loads(r2.stdout)
+    assert data2["prs"][0]["verdicts"] == 1
+
+
+def test_validation_unhashable_and_type_checks_across_shapes(tmp_path):
+    """Verify unhashable list/dict in pr.state, verdict value, config list_str_keys raise exit 2."""
+    # 1. PR state is list or dict
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["state"] = []
+    p = tmp_path / "snap_state_list.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    snap["prs"][0]["state"] = {"closed": True}
+    p = tmp_path / "snap_state_dict.json"
+    p.write_text(json.dumps(snap))
+    r = run_tq("score", "--snapshot", str(p))
+    assert_tool_error(r, "snapshot_bad_shape")
+
+    # 2. verdict in input prs is list or dict
+    snap_p = tmp_path / "snap_ok.json"
+    snap_p.write_text(json.dumps(GOLDEN_SNAPSHOT))
+
+    inp = copy.deepcopy(GOLDEN_INPUT)
+    inp["prs"] = {
+        "acme/widgets#21": {
+            "verdicts": [
+                {"at": "2030-01-02T04:00:00Z", "role": "arch", "verdict": [], "head": "1111111"}
+            ]
+        }
+    }
+    p_inp = tmp_path / "inp_verdict_list.json"
+    p_inp.write_text(json.dumps(inp))
+    r = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp))
+    assert_tool_error(r, "input_bad_shape")
+
+    inp["prs"]["acme/widgets#21"]["verdicts"][0]["verdict"] = {}
+    p_inp = tmp_path / "inp_verdict_dict.json"
+    p_inp.write_text(json.dumps(inp))
+    r = run_tq("score", "--snapshot", str(snap_p), "--input", str(p_inp))
+    assert_tool_error(r, "input_bad_shape")
+
+    # 3. config list_str_keys containing non-str (e.g. list/dict/int)
+    cfg = json.loads(run_tq("defaults").stdout)
+    cfg["review_roles"] = [["impl"]]
+    p_cfg = tmp_path / "cfg_bad_roles.json"
+    p_cfg.write_text(json.dumps(cfg))
+    r = run_tq("score", "--snapshot", str(snap_p), "--config", str(p_cfg))
+    assert_tool_error(r, "config_bad_shape")
+
+    cfg = json.loads(run_tq("defaults").stdout)
+    cfg["ci_green_conclusions"] = [{"success": True}]
+    p_cfg = tmp_path / "cfg_bad_green.json"
+    p_cfg.write_text(json.dumps(cfg))
+    r = run_tq("score", "--snapshot", str(snap_p), "--config", str(p_cfg))
+    assert_tool_error(r, "config_bad_shape")
+

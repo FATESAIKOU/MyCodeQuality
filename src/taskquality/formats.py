@@ -113,7 +113,8 @@ def validate_snapshot(snap: dict) -> None:
             raise ToolError("snapshot_bad_shape", "PR title is required and must be a string")
         if "body" not in pr or not isinstance(pr["body"], str):
             raise ToolError("snapshot_bad_shape", "PR body is required and must be a string")
-        if pr.get("state") not in ("open", "closed"):
+        state = pr.get("state")
+        if not isinstance(state, str) or state not in ("open", "closed"):
             raise ToolError("snapshot_bad_shape", "PR state must be 'open' or 'closed'")
         head_sha = pr.get("head_sha")
         if not isinstance(head_sha, str) or not head_sha:
@@ -180,6 +181,12 @@ def validate_snapshot(snap: dict) -> None:
             if "created_at" not in run or run["created_at"] is None:
                 raise ToolError("snapshot_bad_shape", "ci_run created_at is required")
             parse_iso_utc(run["created_at"])
+            status = run.get("status")
+            if not isinstance(status, str):
+                raise ToolError("snapshot_bad_shape", "ci_run status must be a string")
+            conclusion = run.get("conclusion")
+            if conclusion is not None and not isinstance(conclusion, str):
+                raise ToolError("snapshot_bad_shape", "ci_run conclusion must be a string or null")
 
 
 def validate_input(input_data: dict, snapshot_ticket: str) -> None:
@@ -213,8 +220,9 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
                     parse_iso_utc(v["at"])
                     if "role" not in v or not isinstance(v["role"], str) or not v["role"]:
                         raise ToolError("input_bad_shape", "verdict item missing role")
-                    if v.get("verdict") not in ("pass", "fail", "other"):
-                        raise ToolError("input_bad_shape", f"invalid verdict value: {v.get('verdict')!r}")
+                    v_val = v.get("verdict")
+                    if not isinstance(v_val, str) or v_val not in ("pass", "fail", "other"):
+                        raise ToolError("input_bad_shape", f"invalid verdict value: {v_val!r}")
                     head = v.get("head")
                     if not isinstance(head, str) or not HEX_HEAD_RE.match(head):
                         raise ToolError("input_bad_shape", f"verdict head must be 7-40 lowercase hex digits: {head!r}")
@@ -235,7 +243,7 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
             if not isinstance(model, str) or not model:
                 raise ToolError("input_bad_shape", f"usage item model must be a non-empty string: {model!r}")
             role = item.get("role")
-            if role not in VALID_USAGE_ROLES:
+            if not isinstance(role, str) or role not in VALID_USAGE_ROLES:
                 raise ToolError("input_bad_shape", f"invalid usage role: {role!r}")
             if "pr" in item and item["pr"] is not None:
                 parse_pr_id(item["pr"], "input_bad_shape")
