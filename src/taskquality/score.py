@@ -197,14 +197,17 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     # review_first_pass
     if len(merged_prs) == 0:
         review_first_pass = None
-        metric_missing["review_first_pass"] = "no_merged_pr"
+        metric_missing["review_first_pass"] = {"no_merged_pr"}
     elif len(candidate_merged) == 0:
         review_first_pass = None
-        metric_missing["review_first_pass"] = "no_verdict"
+        metric_missing["review_first_pass"] = {"no_verdict"}
     elif any(p["first_review_pass"] is None for p in candidate_merged):
         review_first_pass = None
-        null_p = next(p for p in candidate_merged if p["first_review_pass"] is None)
-        metric_missing["review_first_pass"] = pr_missing_map[null_p["pr"]]["first_review_pass"]
+        metric_missing["review_first_pass"] = {
+            pr_missing_map[p["pr"]]["first_review_pass"]
+            for p in candidate_merged
+            if p["first_review_pass"] is None and "first_review_pass" in pr_missing_map[p["pr"]]
+        }
     else:
         num = sum(1 for p in candidate_merged if p["first_review_pass"] is True)
         den = len(candidate_merged)
@@ -213,54 +216,63 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     # fix_rounds
     if len(merged_prs) == 0:
         fix_rounds = None
-        metric_missing["fix_rounds"] = "no_merged_pr"
+        metric_missing["fix_rounds"] = {"no_merged_pr"}
     elif len(candidate_merged) == 0:
         fix_rounds = None
-        metric_missing["fix_rounds"] = "no_verdict"
+        metric_missing["fix_rounds"] = {"no_verdict"}
     elif any(p["fix_rounds"] is None for p in candidate_merged):
         fix_rounds = None
-        null_p = next(p for p in candidate_merged if p["fix_rounds"] is None)
-        metric_missing["fix_rounds"] = pr_missing_map[null_p["pr"]]["fix_rounds"]
+        metric_missing["fix_rounds"] = {
+            pr_missing_map[p["pr"]]["fix_rounds"]
+            for p in candidate_merged
+            if p["fix_rounds"] is None and "fix_rounds" in pr_missing_map[p["pr"]]
+        }
     else:
         fix_rounds = sum(p["fix_rounds"] for p in candidate_merged)
 
     # re_reviews
     if len(merged_prs) == 0:
         re_reviews = None
-        metric_missing["re_reviews"] = "no_merged_pr"
+        metric_missing["re_reviews"] = {"no_merged_pr"}
     elif len(candidate_merged) == 0:
         re_reviews = None
-        metric_missing["re_reviews"] = "no_verdict"
+        metric_missing["re_reviews"] = {"no_verdict"}
     elif any(p["re_reviews"] is None for p in candidate_merged):
         re_reviews = None
-        null_p = next(p for p in candidate_merged if p["re_reviews"] is None)
-        metric_missing["re_reviews"] = pr_missing_map[null_p["pr"]]["re_reviews"]
+        metric_missing["re_reviews"] = {
+            pr_missing_map[p["pr"]]["re_reviews"]
+            for p in candidate_merged
+            if p["re_reviews"] is None and "re_reviews" in pr_missing_map[p["pr"]]
+        }
     else:
         re_reviews = sum(p["re_reviews"] for p in candidate_merged)
 
     # approved_head_stale
     if len(merged_prs) == 0:
         approved_head_stale = None
-        metric_missing["approved_head_stale"] = "no_merged_pr"
+        metric_missing["approved_head_stale"] = {"no_merged_pr"}
     elif len(candidate_merged) == 0:
         approved_head_stale = None
-        metric_missing["approved_head_stale"] = "no_verdict"
+        metric_missing["approved_head_stale"] = {"no_verdict"}
     elif any(p["approved_head_stale"] is None for p in candidate_merged):
         approved_head_stale = None
-        null_p = next(p for p in candidate_merged if p["approved_head_stale"] is None)
-        metric_missing["approved_head_stale"] = pr_missing_map[null_p["pr"]]["approved_head_stale"]
+        metric_missing["approved_head_stale"] = {
+            pr_missing_map[p["pr"]]["approved_head_stale"]
+            for p in candidate_merged
+            if p["approved_head_stale"] is None and "approved_head_stale" in pr_missing_map[p["pr"]]
+        }
     else:
         approved_head_stale = sum(1 for p in candidate_merged if p["approved_head_stale"] is True)
 
     # ci_first_green
     if any(p["ci_first_green"] is None and pr_missing_map[p["pr"]].get("ci_first_green") == "ci_incomplete" for p in merged_prs):
         ci_first_green = None
-        metric_missing["ci_first_green"] = "ci_incomplete"
+        metric_missing["ci_first_green"] = {"ci_incomplete"}
     else:
         evaluated_ci = [p for p in merged_prs if p["ci_first_green"] is not None]
         if len(evaluated_ci) == 0:
             ci_first_green = None
-            metric_missing["ci_first_green"] = "no_merged_pr" if len(merged_prs) == 0 else "no_ci_runs"
+            metric_missing["ci_first_green"] = {"no_merged_pr"} if len(merged_prs) == 0 else {"no_ci_runs"}
         else:
             num = sum(1 for p in evaluated_ci if p["ci_first_green"] is True)
             den = len(evaluated_ci)
@@ -269,7 +281,11 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     # rework_prs
     if any(p["rework"] is None for p in pr_results):
         rework_prs = None
-        metric_missing["rework_prs"] = "input_null"
+        metric_missing["rework_prs"] = {
+            pr_missing_map[p["pr"]]["rework"]
+            for p in pr_results
+            if p["rework"] is None and "rework" in pr_missing_map[p["pr"]]
+        }
     else:
         rework_prs = sum(1 for p in pr_results if p["rework"] is True)
 
@@ -286,10 +302,10 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
 
     if prs_open > 0:
         cycle_seconds = None
-        metric_missing["cycle_seconds"] = "pr_open"
+        metric_missing["cycle_seconds"] = {"pr_open"}
     elif prs_merged == 0:
         cycle_seconds = None
-        metric_missing["cycle_seconds"] = "no_merged_pr"
+        metric_missing["cycle_seconds"] = {"no_merged_pr"}
     else:
         latest_merged_at = max(p["merged_at"] for p in merged_prs)
         dt_start = parse_iso_utc(start_ts)
@@ -297,7 +313,7 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         diff = int((dt_end - dt_start).total_seconds())
         if diff < 0:
             cycle_seconds = None
-            metric_missing["cycle_seconds"] = "bad_interval"
+            metric_missing["cycle_seconds"] = {"bad_interval"}
         else:
             cycle_seconds = diff
 
@@ -328,38 +344,38 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         status = "complete"
 
     # 5. Clean
-    clean_reasons = []
+    clean_reasons = set()
     if status != "complete":
         clean = None
-        clean_reasons.append("pr_open" if status == "in_progress" else "no_merged_pr")
+        clean_reasons.add("pr_open" if status == "in_progress" else "no_merged_pr")
     else:
-        # Conditions 1-7: True, False, or (None, reason)
+        # Conditions 1-7: True, False, or (None, reasons_set)
         c1 = (unreviewed_merged_prs == 0)
         c2 = (prs_without_ci == 0)
 
         if review_first_pass is None:
             # den == 0 means unreviewed_merged_prs > 0 (handled by c1)
-            c3 = False if c1 is False else (None, metric_missing.get("review_first_pass"))
+            c3 = False if c1 is False else (None, metric_missing.get("review_first_pass", set()))
         else:
             c3 = (review_first_pass["num"] == review_first_pass["den"])
 
         if fix_rounds is None:
-            c4 = False if c1 is False else (None, metric_missing.get("fix_rounds"))
+            c4 = False if c1 is False else (None, metric_missing.get("fix_rounds", set()))
         else:
             c4 = (fix_rounds == 0)
 
         if approved_head_stale is None:
-            c5 = False if c1 is False else (None, metric_missing.get("approved_head_stale"))
+            c5 = False if c1 is False else (None, metric_missing.get("approved_head_stale", set()))
         else:
             c5 = (approved_head_stale == 0)
 
         if ci_first_green is None:
-            c6 = False if c2 is False else (None, metric_missing.get("ci_first_green"))
+            c6 = False if c2 is False else (None, metric_missing.get("ci_first_green", set()))
         else:
             c6 = (ci_first_green["num"] == ci_first_green["den"])
 
         if rework_prs is None:
-            c7 = (None, metric_missing.get("rework_prs"))
+            c7 = (None, metric_missing.get("rework_prs", set()))
         else:
             c7 = (rework_prs == 0)
 
@@ -372,8 +388,7 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
             clean = None
             for c in all_conds:
                 if isinstance(c, tuple) and c[0] is None and c[1]:
-                    if c[1] not in clean_reasons:
-                        clean_reasons.append(c[1])
+                    clean_reasons.update(c[1])
 
     # 6. Usage and Counters
     counters_missing = []
@@ -458,7 +473,8 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         if m_field == "cycle_basis":
             continue
         if val is None and m_field in metric_missing:
-            missing_items.append({"field": f"metrics.{m_field}", "reason": metric_missing[m_field]})
+            for r_reason in metric_missing[m_field]:
+                missing_items.append({"field": f"metrics.{m_field}", "reason": r_reason})
 
     # Usage missing
     for f_name, r_reason in usage_missing:
