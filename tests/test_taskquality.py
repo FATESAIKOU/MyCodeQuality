@@ -1431,3 +1431,286 @@ def test_c_b13_no_clock_no_network(tmp_path, monkeypatch):
     # Calling main directly inside Python with monkeypatched clock/network
     rc = main(["score", "--snapshot", str(p_snap), "--input", str(p_in), "--json"])
     assert rc == 0
+
+
+# Issue 15: metric_missing multi-reason tests
+def test_issue15_1_fix_rounds_multi_reason(tmp_path):
+    """(1) Two merged PRs with different missing reasons for fix_rounds -> metrics.fix_rounds has 2 missing items."""
+    snap = {
+        "kind": "taskquality-snapshot",
+        "schema_version": 1,
+        "ticket": "acme/widgets#15",
+        "prs": [
+            {
+                "id": "acme/widgets#101",
+                "title": "Closes #15",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T02:00:00Z",
+                "head_sha": "a" * 40,
+                "comments": [
+                    {
+                        "id": 1,
+                        "created_at": "2030-01-01T01:30:00Z",
+                        "first_line": "審查：m 結論：未知狀態（head " + "a" * 7 + "）",
+                    }
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {
+                        "run_id": 1,
+                        "workflow": "ci",
+                        "head_sha": "a" * 40,
+                        "run_attempt": 1,
+                        "created_at": "2030-01-01T01:10:00Z",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+            {
+                "id": "acme/widgets#102",
+                "title": "Closes #15",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:05:00Z",
+                "merged_at": "2030-01-01T02:05:00Z",
+                "head_sha": "b" * 40,
+                "comments": [
+                    {
+                        "id": 2,
+                        "created_at": "2030-01-01T01:35:00Z",
+                        "first_line": "審查：m 結論：可以 merge（head " + "b" * 7 + "）",
+                    }
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {
+                        "run_id": 2,
+                        "workflow": "ci",
+                        "head_sha": "b" * 40,
+                        "run_attempt": 1,
+                        "created_at": "2030-01-01T01:15:00Z",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+        ],
+    }
+    inp = {
+        "kind": "taskquality-input",
+        "schema_version": 1,
+        "ticket": "acme/widgets#15",
+        "prs": {
+            "acme/widgets#102": {
+                "verdicts": None,
+            }
+        },
+    }
+    p_snap = tmp_path / "snap.json"
+    p_inp = tmp_path / "inp.json"
+    p_snap.write_text(json.dumps(snap))
+    p_inp.write_text(json.dumps(inp))
+
+    r = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_inp), "--json")
+    assert r.returncode == 0
+    res = json.loads(r.stdout)
+
+    assert res["metrics"]["fix_rounds"] is None
+    fix_rounds_missing = [
+        m for m in res["missing"] if m["field"] == "metrics.fix_rounds"
+    ]
+    assert len(fix_rounds_missing) == 2
+    assert fix_rounds_missing == [
+        {"field": "metrics.fix_rounds", "reason": "input_null"},
+        {"field": "metrics.fix_rounds", "reason": "unrecognized_verdict"},
+    ]
+
+
+def test_issue15_2_clean_multi_reason(tmp_path):
+    """(2) Same scenario clean is null -> clean has 2 missing items."""
+    snap = {
+        "kind": "taskquality-snapshot",
+        "schema_version": 1,
+        "ticket": "acme/widgets#15",
+        "prs": [
+            {
+                "id": "acme/widgets#101",
+                "title": "Closes #15",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T02:00:00Z",
+                "head_sha": "a" * 40,
+                "comments": [
+                    {
+                        "id": 1,
+                        "created_at": "2030-01-01T01:30:00Z",
+                        "first_line": "審查：m 結論：未知狀態（head " + "a" * 7 + "）",
+                    }
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {
+                        "run_id": 1,
+                        "workflow": "ci",
+                        "head_sha": "a" * 40,
+                        "run_attempt": 1,
+                        "created_at": "2030-01-01T01:10:00Z",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+            {
+                "id": "acme/widgets#102",
+                "title": "Closes #15",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:05:00Z",
+                "merged_at": "2030-01-01T02:05:00Z",
+                "head_sha": "b" * 40,
+                "comments": [
+                    {
+                        "id": 2,
+                        "created_at": "2030-01-01T01:35:00Z",
+                        "first_line": "審查：m 結論：可以 merge（head " + "b" * 7 + "）",
+                    }
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {
+                        "run_id": 2,
+                        "workflow": "ci",
+                        "head_sha": "b" * 40,
+                        "run_attempt": 1,
+                        "created_at": "2030-01-01T01:15:00Z",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+        ],
+    }
+    inp = {
+        "kind": "taskquality-input",
+        "schema_version": 1,
+        "ticket": "acme/widgets#15",
+        "prs": {
+            "acme/widgets#102": {
+                "verdicts": None,
+            }
+        },
+    }
+    p_snap = tmp_path / "snap.json"
+    p_inp = tmp_path / "inp.json"
+    p_snap.write_text(json.dumps(snap))
+    p_inp.write_text(json.dumps(inp))
+
+    r = run_tq("score", "--snapshot", str(p_snap), "--input", str(p_inp), "--json")
+    assert r.returncode == 0
+    res = json.loads(r.stdout)
+
+    assert res["clean"] is None
+    clean_missing = [
+        m for m in res["missing"] if m["field"] == "clean"
+    ]
+    assert len(clean_missing) == 2
+    assert clean_missing == [
+        {"field": "clean", "reason": "input_null"},
+        {"field": "clean", "reason": "unrecognized_verdict"},
+    ]
+
+
+def test_issue15_3_same_reason_deduped(tmp_path):
+    """(3) Same reason two PRs -> only 1 missing item for fix_rounds and clean."""
+    snap = {
+        "kind": "taskquality-snapshot",
+        "schema_version": 1,
+        "ticket": "acme/widgets#15",
+        "prs": [
+            {
+                "id": "acme/widgets#101",
+                "title": "Closes #15",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:00:00Z",
+                "merged_at": "2030-01-01T02:00:00Z",
+                "head_sha": "a" * 40,
+                "comments": [
+                    {
+                        "id": 1,
+                        "created_at": "2030-01-01T01:30:00Z",
+                        "first_line": "審查：m 結論：未知狀態（head " + "a" * 7 + "）",
+                    }
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {
+                        "run_id": 1,
+                        "workflow": "ci",
+                        "head_sha": "a" * 40,
+                        "run_attempt": 1,
+                        "created_at": "2030-01-01T01:10:00Z",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+            {
+                "id": "acme/widgets#102",
+                "title": "Closes #15",
+                "body": "",
+                "state": "closed",
+                "created_at": "2030-01-01T01:05:00Z",
+                "merged_at": "2030-01-01T02:05:00Z",
+                "head_sha": "b" * 40,
+                "comments": [
+                    {
+                        "id": 2,
+                        "created_at": "2030-01-01T01:35:00Z",
+                        "first_line": "審查：m 結論：其他未知（head " + "b" * 7 + "）",
+                    }
+                ],
+                "reviews": [],
+                "ci_runs": [
+                    {
+                        "run_id": 2,
+                        "workflow": "ci",
+                        "head_sha": "b" * 40,
+                        "run_attempt": 1,
+                        "created_at": "2030-01-01T01:15:00Z",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+        ],
+    }
+    p_snap = tmp_path / "snap.json"
+    p_snap.write_text(json.dumps(snap))
+
+    r = run_tq("score", "--snapshot", str(p_snap), "--json")
+    assert r.returncode == 0
+    res = json.loads(r.stdout)
+
+    assert res["metrics"]["fix_rounds"] is None
+    assert res["clean"] is None
+
+    fix_rounds_missing = [
+        m for m in res["missing"] if m["field"] == "metrics.fix_rounds"
+    ]
+    assert len(fix_rounds_missing) == 1
+    assert fix_rounds_missing == [
+        {"field": "metrics.fix_rounds", "reason": "unrecognized_verdict"},
+    ]
+
+    clean_missing = [
+        m for m in res["missing"] if m["field"] == "clean"
+    ]
+    assert len(clean_missing) == 1
+    assert clean_missing == [
+        {"field": "clean", "reason": "unrecognized_verdict"},
+    ]
