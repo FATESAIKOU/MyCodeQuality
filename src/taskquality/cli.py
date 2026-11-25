@@ -129,6 +129,9 @@ def main(argv=None) -> int:
         except ToolError as e:
             sys.stderr.write(f"taskquality: error {e.code}: {_one_line(e.message)}\n")
             return EXIT_TOOL_ERROR
+        except Exception as e:
+            sys.stderr.write(f"taskquality: error gh_failed: {_one_line(str(e))}\n")
+            return EXIT_TOOL_ERROR
         return EXIT_OK
 
     if args.cmd == "score":

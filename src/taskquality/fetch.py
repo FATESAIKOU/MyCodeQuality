@@ -92,39 +92,71 @@ def invoke_runner(runner: Callable[[list[str]], Any], argv: list[str]) -> tuple[
     """Invoke runner and map FileNotFoundError to gh_unavailable ToolError."""
     try:
         res = runner(argv)
+        return normalize_runner_result(res)
     except FileNotFoundError as e:
         raise ToolError("gh_unavailable", f"gh command not found: {e}") from e
     except ToolError:
         raise
     except Exception as e:
         raise ToolError("gh_failed", f"error invoking gh runner: {e}") from e
-    return normalize_runner_result(res)
+
+
+def parse_retry_headers(combined: str) -> tuple[int | None, int | None]:
+    """Extract Retry-After and x-ratelimit-reset values from text."""
+    m_ra = re.search(r"(?i)retry-after:\s*(\d+)", combined)
+    m_reset = re.search(r"(?i)x-ratelimit-reset:\s*(\d+)", combined)
+    retry_after = int(m_ra.group(1)) if m_ra else None
+    reset_epoch = int(m_reset.group(1)) if m_reset else None
+    return retry_after, reset_epoch
 
 
 def check_rate_limit(stdout: str, stderr: str, code: int) -> tuple[bool, int | None, int | None]:
     """Check if response indicates HTTP 403 or 429 rate limit.
 
     Rate limit is only checked when code != 0.
+    Under real gh, failures output stderr in the form: `gh: <message> (HTTP <code>)`.
     Returns (is_rate_limited, retry_after_seconds, reset_epoch).
     """
     if code == 0:
         return False, None, None
 
     combined = f"{stderr}\n{stdout}"
-    is_429 = code == 429 or bool(re.search(r"\b429\b", combined))
-    is_403 = code == 403 or bool(re.search(r"\b403\b", combined))
 
-    m_ra = re.search(r"(?i)retry-after:\s*(\d+)", combined)
-    m_reset = re.search(r"(?i)x-ratelimit-reset:\s*(\d+)", combined)
+    # Extract HTTP status code from stderr `(HTTP <code>)` or exit code or HTTP status line
+    m_http = re.search(r"\(HTTP\s+(\d+)\)", stderr)
+    if m_http:
+        http_code = int(m_http.group(1))
+    elif code in (403, 429):
+        http_code = code
+    else:
+        m_status = re.search(r"HTTP/\d+(?:\.\d+)?\s+(\d+)", combined)
+        http_code = int(m_status.group(1)) if m_status else code
 
-    retry_after = int(m_ra.group(1)) if m_ra else None
-    reset_epoch = int(m_reset.group(1)) if m_reset else None
+    is_429 = (http_code == 429)
+    is_403 = (http_code == 403) and bool(re.search(r"rate\s*limit", combined, re.IGNORECASE))
 
-    if (is_429 or is_403) and (retry_after is not None or reset_epoch is not None):
-        return True, retry_after, reset_epoch
-    if is_429:
-        return True, None, None
-    return False, None, None
+    if not (is_429 or is_403):
+        return False, None, None
+
+    retry_after, reset_epoch = parse_retry_headers(combined)
+    return True, retry_after, reset_epoch
+
+
+def check_graphql_rate_limit(stdout: str) -> bool:
+    """Check if GraphQL response JSON contains errors with type RATE_LIMITED."""
+    body = strip_http_headers(stdout).strip()
+    if not body.startswith("{"):
+        return False
+    try:
+        data = json.loads(body)
+        if isinstance(data, dict) and "errors" in data and isinstance(data["errors"], list):
+            for err in data["errors"]:
+                if isinstance(err, dict):
+                    if err.get("type") == "RATE_LIMITED" or "rate limit" in str(err.get("message", "")).lower():
+                        return True
+    except Exception:
+        pass
+    return False
 
 
 def execute_with_retry(
@@ -134,10 +166,15 @@ def execute_with_retry(
     time_func: Callable[[], float],
     max_retries: int = 3,
 ) -> tuple[str, str, int]:
-    """Execute command with runner, retrying up to max_retries on 403/429 rate limits."""
+    """Execute command with runner, retrying up to max_retries on 403/429 rate limits or GraphQL RATE_LIMITED."""
     for attempt in range(max_retries + 1):
         stdout, stderr, code = invoke_runner(runner, argv)
         is_rl, retry_after, reset_epoch = check_rate_limit(stdout, stderr, code)
+        if not is_rl and check_graphql_rate_limit(stdout):
+            is_rl = True
+            combined = f"{stderr}\n{stdout}"
+            retry_after, reset_epoch = parse_retry_headers(combined)
+
         if is_rl:
             if attempt < max_retries:
                 if retry_after is not None:
@@ -145,13 +182,12 @@ def execute_with_retry(
                 elif reset_epoch is not None:
                     wait_sec = min(max(0, reset_epoch - int(time_func())), 60)
                 else:
-                    wait_sec = min(1, 60)
+                    wait_sec = 60
                 sleeper(wait_sec)
                 continue
             else:
                 raise ToolError("rate_limited", f"GitHub API rate limit exceeded after {max_retries} retries")
         return stdout, stderr, code
-    raise ToolError("rate_limited", f"GitHub API rate limit exceeded after {max_retries} retries")
 
 
 def strip_http_headers(raw: str) -> str:
@@ -236,10 +272,7 @@ def fetch_snapshot(
         raise ToolError("out_unwritable", f"--out is a directory: {out}")
     out_dir = out.parent
     if not out_dir.exists():
-        try:
-            out_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            raise ToolError("out_unwritable", f"cannot create directory {out_dir}: {e}") from e
+        raise ToolError("out_unwritable", f"parent directory does not exist: {out_dir}")
 
     # 1. Candidate PRs via GraphQL timelineItems
     cursor = None
@@ -318,7 +351,11 @@ def fetch_snapshot(
             elif node.get("__typename") == "CrossReferencedEvent" or "source" in node:
                 pr_target = node.get("source")
 
-            if isinstance(pr_target, dict) and "number" in pr_target:
+            if (
+                isinstance(pr_target, dict)
+                and pr_target.get("__typename") == "PullRequest"
+                and "number" in pr_target
+            ):
                 p_num = pr_target["number"]
                 r_info = pr_target.get("repository", {})
                 r_name = None
@@ -339,26 +376,31 @@ def fetch_snapshot(
             break
         page += 1
 
-    # Filter by search_repos (if specified)
-    filtered_prs: set[str] = set()
+    # Filter by search_repos (if specified) and deduplicate candidate PRs by (repo.lower(), number)
+    candidate_map: dict[tuple[str, int], str] = {}
     if search_repos:
         search_repos_lower = {s.lower() for s in search_repos}
         for pr_id in candidate_prs:
-            repo_part, _ = parse_pr_id(pr_id)
+            repo_part, num_part = parse_pr_id(pr_id)
             if repo_part.lower() in search_repos_lower:
-                filtered_prs.add(pr_id)
+                candidate_map[(repo_part.lower(), num_part)] = pr_id
     else:
-        filtered_prs = set(candidate_prs)
+        for pr_id in candidate_prs:
+            repo_part, num_part = parse_pr_id(pr_id)
+            candidate_map[(repo_part.lower(), num_part)] = pr_id
 
     # Explicit PRs are ALWAYS included (exempt from search-repo filtering)
     if explicit_prs:
-        for pr_id in explicit_prs:
-            filtered_prs.add(pr_id)
+        for pid in explicit_prs:
+            r_part, num_part = parse_pr_id(pid, "bad_arguments")
+            key = (r_part.lower(), num_part)
+            if key not in candidate_map:
+                candidate_map[key] = pid
 
-    # Sort candidate PRs deterministically by (owner/repo string, number int)
+    # Sort candidate PRs deterministically by (owner/repo lowercase string, number int)
     sorted_candidate_prs = sorted(
-        filtered_prs,
-        key=lambda pid: (parse_pr_id(pid)[0], parse_pr_id(pid)[1]),
+        candidate_map.values(),
+        key=lambda pid: (parse_pr_id(pid)[0].lower(), parse_pr_id(pid)[1]),
     )
 
     prs: list[dict[str, Any]] = []
@@ -375,14 +417,28 @@ def fetch_snapshot(
             raise ToolError("gh_failed", f"failed to fetch PR {pr_id}: {pr_err.strip()}")
         pr_data = parse_single_json(pr_out)
 
-        head_obj = pr_data.get("head") or {}
-        head_sha = head_obj.get("sha", "")
-        head_ref = head_obj.get("ref", "")
-        title = pr_data.get("title") or ""
-        body = pr_data.get("body") or ""
-        state = pr_data.get("state", "closed")
+        # Canonical output PR ID from API response if present
+        base_obj = pr_data.get("base") if isinstance(pr_data.get("base"), dict) else {}
+        base_repo_obj = base_obj.get("repo") if isinstance(base_obj.get("repo"), dict) else {}
+        canonical_repo = base_repo_obj.get("full_name")
+        if not canonical_repo:
+            repo_obj = pr_data.get("repository") if isinstance(pr_data.get("repository"), dict) else {}
+            canonical_repo = repo_obj.get("full_name") or repo_obj.get("nameWithOwner")
+        if not canonical_repo:
+            canonical_repo = pr_repo
+
+        output_pr_id = f"{canonical_repo}#{pr_num}"
+
+        head_obj = pr_data.get("head") if isinstance(pr_data.get("head"), dict) else {}
+        head_sha = str(head_obj.get("sha") or "")
+        head_ref = str(head_obj.get("ref") or "")
+        title = str(pr_data.get("title") or "")
+        body = str(pr_data.get("body") or "")
+        state = str(pr_data.get("state", "closed"))
         draft = bool(pr_data.get("draft", False))
-        created_at = pr_data["created_at"]
+        created_at = pr_data.get("created_at")
+        if not created_at:
+            raise ToolError("gh_failed", f"PR {pr_id} missing created_at in API response")
         merged_at = pr_data.get("merged_at")
         closed_at = pr_data.get("closed_at")
         merge_commit_sha = pr_data.get("merge_commit_sha")
@@ -391,10 +447,7 @@ def fetch_snapshot(
         com_argv = ["gh", "api", "--paginate", f"/repos/{pr_repo}/issues/{pr_num}/comments"]
         com_out, com_err, com_code = execute_with_retry(com_argv, actual_runner, actual_sleeper, actual_time)
         if com_code != 0:
-            combined = f"{com_out}\n{com_err}".lower()
-            if "pagination" in combined:
-                raise ToolError("incomplete_pagination", f"pagination failed for comments of {pr_id}: {com_err.strip()}")
-            raise ToolError("gh_failed", f"failed to fetch comments for {pr_id}: {com_err.strip()}")
+            raise ToolError("incomplete_pagination", f"pagination failed for comments of {pr_id}: {com_err.strip()}")
         raw_comments = parse_paginated_json(com_out)
         comments = []
         for c in raw_comments:
@@ -413,10 +466,7 @@ def fetch_snapshot(
         rev_argv = ["gh", "api", "--paginate", f"/repos/{pr_repo}/pulls/{pr_num}/reviews"]
         rev_out, rev_err, rev_code = execute_with_retry(rev_argv, actual_runner, actual_sleeper, actual_time)
         if rev_code != 0:
-            combined = f"{rev_out}\n{rev_err}".lower()
-            if "pagination" in combined:
-                raise ToolError("incomplete_pagination", f"pagination failed for reviews of {pr_id}: {rev_err.strip()}")
-            raise ToolError("gh_failed", f"failed to fetch reviews for {pr_id}: {rev_err.strip()}")
+            raise ToolError("incomplete_pagination", f"pagination failed for reviews of {pr_id}: {rev_err.strip()}")
         raw_reviews = parse_paginated_json(rev_out)
         reviews = []
         for r in raw_reviews:
@@ -433,10 +483,7 @@ def fetch_snapshot(
         cmt_argv = ["gh", "api", "--paginate", f"/repos/{pr_repo}/pulls/{pr_num}/commits"]
         cmt_out, cmt_err, cmt_code = execute_with_retry(cmt_argv, actual_runner, actual_sleeper, actual_time)
         if cmt_code != 0:
-            combined = f"{cmt_out}\n{cmt_err}".lower()
-            if "pagination" in combined:
-                raise ToolError("incomplete_pagination", f"pagination failed for commits of {pr_id}: {cmt_err.strip()}")
-            raise ToolError("gh_failed", f"failed to fetch commits for {pr_id}: {cmt_err.strip()}")
+            raise ToolError("incomplete_pagination", f"pagination failed for commits of {pr_id}: {cmt_err.strip()}")
         raw_commits = parse_paginated_json(cmt_out)
         pr_commit_shas = {c["sha"] for c in raw_commits if isinstance(c, dict) and "sha" in c}
         if head_sha:
@@ -449,10 +496,7 @@ def fetch_snapshot(
         run_argv = ["gh", "api", "--paginate", runs_endpoint]
         run_out, run_err, run_code = execute_with_retry(run_argv, actual_runner, actual_sleeper, actual_time)
         if run_code != 0:
-            combined = f"{run_out}\n{run_err}".lower()
-            if "pagination" in combined:
-                raise ToolError("incomplete_pagination", f"pagination failed for workflow runs of {pr_id}: {run_err.strip()}")
-            raise ToolError("gh_failed", f"failed to fetch workflow runs for {pr_id}: {run_err.strip()}")
+            raise ToolError("incomplete_pagination", f"pagination failed for workflow runs of {pr_id}: {run_err.strip()}")
         raw_runs = parse_paginated_json(run_out)
 
         matching_runs = []
@@ -469,8 +513,16 @@ def fetch_snapshot(
 
         ci_runs_dict = {}
         for r in matching_runs:
-            run_id = int(r["id"])
-            run_attempt = int(r.get("run_attempt", 1))
+            if "id" not in r:
+                raise ToolError("gh_failed", "workflow run missing id in API response")
+            try:
+                run_id = int(r["id"])
+            except (ValueError, TypeError) as e:
+                raise ToolError("gh_failed", f"invalid workflow run id {r.get('id')!r}: {e}")
+            try:
+                run_attempt = int(r.get("run_attempt", 1))
+            except (ValueError, TypeError) as e:
+                raise ToolError("gh_failed", f"invalid workflow run_attempt {r.get('run_attempt')!r}: {e}")
 
             if run_attempt > 1:
                 for k in range(1, run_attempt):
@@ -505,7 +557,7 @@ def fetch_snapshot(
         ci_runs.sort(key=lambda item: (item["created_at"], item["run_id"], item["run_attempt"]))
 
         prs.append({
-            "id": pr_id,
+            "id": output_pr_id,
             "title": title,
             "body": body,
             "state": state,
@@ -540,8 +592,15 @@ def fetch_snapshot(
             tmp.close()
             os.replace(tmp_path, out)
         except Exception:
+            try:
+                tmp.close()
+            except Exception:
+                pass
             if tmp_path.exists():
-                tmp_path.unlink()
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
             raise
     except OSError as e:
         raise ToolError("out_unwritable", f"cannot write to {out}: {e}") from e
