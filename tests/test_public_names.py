@@ -39,6 +39,10 @@ def _candidates(text):
                 found.add("".join(pieces[i:j]))
     for compound in COMPOUND_RE.findall(text):
         found.add(re.sub(r"[-_.]", "", compound))
+        parts = re.split(r"[-_.]", compound)
+        for i in range(len(parts)):
+            for j in range(i + 1, len(parts) + 1):
+                found.add("".join(parts[i:j]))
     return {word.lower() for word in found}
 
 
@@ -55,16 +59,16 @@ def _load_hashes(path):
     return hashes
 
 
-def _tracked_text_files():
+def _tracked_text_files(root=ROOT):
     out = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", "-z"],
+        ["git", "-C", str(root), "ls-files", "-z"],
         capture_output=True,
         check=True,
     ).stdout.decode("utf-8")
     for name in out.split("\0"):
         if not name or name == "uv.lock":
             continue
-        data = (ROOT / name).read_bytes()
+        data = (root / name).read_bytes()
         if b"\0" in data:
             continue
         try:
@@ -125,6 +129,43 @@ def test_C_P15_synthetic_names_are_caught(text):
 def test_C_P15_controls_are_not_caught(text):
     synthetic = {_sha(name) for name in SYNTHETIC_NAMES}
     assert not _hits(text, synthetic), text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["zephyr-tool.md", "my-zephyr-tool", "zephyr_tool.core", "zephyr.tool-v2"],
+)
+def test_C_P15_compound_parts_are_combined(text):
+    synthetic = {_sha("zephyrtool")}
+    assert _hits(text, synthetic), text
+
+
+@pytest.mark.parametrize("text", ["zephyr tool", "zephyrtoolbox"])
+def test_C_P15_compound_controls_are_not_caught(text):
+    synthetic = {_sha("zephyrtool")}
+    assert not _hits(text, synthetic), text
+
+
+def test_C_P15_scan_scope_includes_tests_and_root_files(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    fillers = {f"a{i}.txt": "nothing here\n" for i in range(1, 7)}
+    files = {
+        **fillers,
+        "tests/hit_test.py": "# zephyr_tool\n",
+        "zz_top.md": "see ZephyrTool\n",
+    }
+    for name, body in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    hits = _scan(_tracked_text_files(tmp_path), {_sha("zephyrtool")})
+    assert sorted(hits) == [("tests/hit_test.py", 1), ("zz_top.md", 1)]
+
+
+def test_C_P15_real_scan_list_includes_guard_and_periodic_doc():
+    names = {name for name, _ in _tracked_text_files()}
+    assert "tests/test_public_names.py" in names
+    assert "docs/periodic.md" in names
 
 
 def test_C_P15_scanner_ignores_its_own_hash_list_and_test():

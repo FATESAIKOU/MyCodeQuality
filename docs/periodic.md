@@ -20,7 +20,7 @@
 - `<結論字>` 只能是下列之一：
   - 通過：`可以 merge`、`通過`
   - 要修：`要修`、`要退回`、`要退回設計`
-  - 其他字會被當成 `other`，該 PR 的審查各項會變成 `null`（`unrecognized_verdict`）。
+  - 其他字會被當成 `other`，該 PR 的審查各項（`review_first_pass`、`fix_rounds` 等）會是 `null`（`unrecognized_verdict`）；`re_reviews` 不受影響，仍是數字（實測為 `0`）。
 - 補充說明寫在 `）` **之後**（同一行），或寫在第二行以下。不要寫進括號裡。
 - 這一行必須是留言的**第一行**，前面不能有空白或 markdown。
 - 每一輪都要貼，包含「要修」那幾輪；head 是該輪審查的 commit。
@@ -49,8 +49,8 @@
 | `**審查**：vendor/model-x 結論：可以 merge（head 4cac21d）` | ❌ markdown |
 | ` 審查：vendor/model-x 結論：可以 merge（head 4cac21d）`（行首有空白） | ❌ |
 | `審查：vendor/model-y 結論：可以 merge` | ❌ 沒有 head |
-| `審查：vendor/model-x 結論：可以merge（head 4cac21d）` | ⚠️ 結論是 `other`（少了空白），該 PR 的審查各項變成 `null` |
-| `審查：vendor/model-x 結論：可以（head 4cac21d）` | ⚠️ 結論是 `other`（「可以」不在清單裡），該 PR 的審查各項變成 `null` |
+| `審查：vendor/model-x 結論：可以merge（head 4cac21d）` | ⚠️ 結論是 `other`（少了空白），審查各項（`review_first_pass`、`fix_rounds` 等）變成 `null`；`re_reviews` 仍是 `0` |
+| `審查：vendor/model-x 結論：可以（head 4cac21d）` | ⚠️ 結論是 `other`（「可以」不在清單裡），審查各項（`review_first_pass`、`fix_rounds` 等）變成 `null`；`re_reviews` 仍是 `0` |
 
 ## 2. PR 內文寫單號
 
@@ -64,7 +64,7 @@ Refs #<N>            ← 只是相關（多 PR 的單、不想自動關單時）
 - 單在別的 repo 時寫 `Closes <owner>/<repo>#<N>`。但 workflow 只看同一個 repo 的 PR，跨 repo 的單不會被算到。
 - 多張單每張都要有關鍵字：`Closes #12, closes #13`。
 - 接受的關鍵字（不分大小寫）：`closes close closed fixes fix fixed resolves resolve resolved refs ref`。前九個會讓 GitHub 自動關單；`refs`、`ref` 只建立關聯，不會關單。
-- 關鍵字前面要是行首、空白、非文字字元或中文字；後面要有一個半形冒號（可省略），**然後至少一個空白**，再接單號。
+- 關鍵字前面要是行首、空白、非文字字元或中文字；後面可以接一個半形冒號（可省略），**然後至少一個空白**，再接單號。
 - 單號可以是 `#N`、`owner/repo#N`，或 `https://<host>/<owner>/<repo>/issues/<N>`。
 - 標題照同樣的規則也會被算，但 GitHub 只看內文，所以**規定寫在內文**。
 
@@ -77,7 +77,7 @@ Refs #<N>            ← 只是相關（多 PR 的單、不想自動關單時）
 | `Closes #222, closes #310` | ✅（第二個有自己的關鍵字） |
 | `Closes #222, #310` | ❌ 對 #310 不算，#310 沒有關鍵字 |
 | `Closes:#310`、`Refs#310` | ❌ 冒號或關鍵字後沒有空白 |
-| `Closes：#310` | ❌ 全形冒號 |
+| `Closes：#310`、`Closes： #310` | ❌ 全形冒號（冒號後有沒有空白都不算） |
 | `（#310 調查；#222）`、`(#310, #222)`、`feat(#310): add cache` | ❌ 沒有關鍵字（標題括號或 scope） |
 | `#310`、`See #310`、`Part of #310`、`Related: #310`、`Implements #310`、`關閉 #310` | ❌ 關鍵字不在清單裡 |
 | `Closes https://github.com/acme/widgets/pull/310` | ❌ URL 要是 `/issues/` |

@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -35,7 +36,7 @@ def run_tq(*args):
     )
 
 
-# C-P1: docs/taskquality.md-style review line convention, one row of the §7.1 table per case.
+# C-P1: review line convention, one row of the §1 table in docs/periodic.md per case.
 # Each row: (line, pattern recognizes it, role, verdict class counted in 審查; None = not counted).
 C_P1_ROWS = [
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", True, "審查", "pass"),
@@ -83,7 +84,7 @@ def test_C_P1_review_line_table(row):
         assert [(v["role"], v["verdict"]) for v in verdicts] == [(role, verdict)], line
 
 
-# C-P2: docs §7.2 table, one row per case. Ticket is acme/widgets#310, PR is in acme/widgets.
+# C-P2: §2 table in docs/periodic.md, one row per case. Ticket is acme/widgets#310, PR is in acme/widgets.
 C_P2_ROWS = [
     (["Closes #310", "closes #310", "CLOSES: #310", "Fixes #310", "Resolves #310", "Refs #310", "ref #310"], True),
     (["Closes acme/widgets#310", "Closes acme/Widgets#310"], True),
@@ -92,7 +93,8 @@ C_P2_ROWS = [
     (["Closes #222, closes #310"], True),
     (["Closes #222, #310"], False),
     (["Closes:#310", "Refs#310"], False),
-    (["Closes：#310"], False),
+    # row-08 現行結果：全形冒號後面有沒有空白，都不算（False）
+    (["Closes：#310", "Closes： #310"], False),
     (["（#310 調查；#222）", "(#310, #222)", "feat(#310): add cache"], False),
     (["#310", "See #310", "Part of #310", "Related: #310", "Implements #310", "關閉 #310"], False),
     (["Closes https://github.com/acme/widgets/pull/310"], False),
@@ -122,6 +124,46 @@ def test_C_P2_ticket_ref_table(bodies, expected):
 
 def test_C_P2_ticket_ref_in_title_only():
     assert _c_p2_match(body="", title="Add cache (closes #310)") is True
+
+
+DOCS_PERIODIC = Path(__file__).resolve().parent.parent / "docs" / "periodic.md"
+
+
+def _docs_table_markers(section):
+    """Marker (✅ ❌ ⚠ or "") of each data row in the table under `## <section>`."""
+    lines = DOCS_PERIODIC.read_text(encoding="utf-8").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(f"## {section}"))
+    rows = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            rows.append(line)
+    markers = []
+    for row in rows[2:]:  # skip header and |---| separator
+        result = row.strip().strip("|").split("|")[1]
+        found = re.search("[✅❌⚠]", result)
+        markers.append(found.group(0) if found else "")
+    return markers
+
+
+def _c_p1_expected_marker(recognized, verdict):
+    if not recognized:
+        return "❌"
+    if verdict == "other":
+        return "⚠"
+    if verdict is None:
+        return ""
+    return "✅"
+
+
+def test_docs_tables_match_test_rows():
+    c_p1 = _docs_table_markers("1.")
+    assert len(c_p1) == len(C_P1_ROWS)
+    assert c_p1 == [_c_p1_expected_marker(rec, verdict) for _, rec, _, verdict in C_P1_ROWS]
+    c_p2 = _docs_table_markers("2.")
+    assert len(c_p2) == len(C_P2_ROWS)
+    assert c_p2 == ["✅" if expected else "❌" for _, expected in C_P2_ROWS]
 
 
 # C-P7: config digest and built-in defaults are locked to literal values.
