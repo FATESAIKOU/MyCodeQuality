@@ -2,7 +2,7 @@
 
 from taskquality.formats import ToolError
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 SCHEMA_VERSION = 1
 
 __all__ = ["__version__", "SCHEMA_VERSION", "ToolError"]
