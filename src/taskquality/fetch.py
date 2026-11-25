@@ -315,15 +315,23 @@ def fetch_ticket_labels(
                 raise ToolError("incomplete_pagination", f"invalid JSON on label page {page}: {e}") from e
             raise ToolError("gh_failed", f"invalid JSON from GraphQL label query: {e}") from e
 
-        if isinstance(data, dict) and data.get("errors"):
+        if not isinstance(data, dict):
+            if page > 1:
+                raise ToolError("incomplete_pagination", f"non-object JSON on label page {page}")
+            raise ToolError("gh_failed", "GraphQL label query returned a non-object JSON value")
+
+        if data.get("errors"):
             err_msgs = " ".join(str(e.get("message", "")) for e in data["errors"] if isinstance(e, dict))
             if page > 1:
                 raise ToolError("incomplete_pagination", f"GraphQL error on label page {page}: {err_msgs}")
             raise ToolError("gh_failed", f"GraphQL label query error: {err_msgs}")
 
-        repo_obj = (data.get("data") or {}).get("repository")
+        data_obj = data.get("data")
+        repo_obj = data_obj.get("repository") if isinstance(data_obj, dict) else None
         issue_obj = repo_obj.get("issue") if isinstance(repo_obj, dict) else None
         if not isinstance(issue_obj, dict):
+            if page > 1:
+                raise ToolError("incomplete_pagination", f"issue missing on label page {page}: {ticket_owner}/{ticket_repo}#{ticket_num}")
             raise ToolError("not_found", f"issue not found: {ticket_owner}/{ticket_repo}#{ticket_num}")
 
         timeline = issue_obj.get("timelineItems") or {}

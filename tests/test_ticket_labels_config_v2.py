@@ -5,6 +5,7 @@ C-P6 ci_required; C-P7 compatibility rules for config v1/v2. All data is synthet
 """
 
 import copy
+import itertools
 import json
 import os
 import subprocess
@@ -302,6 +303,11 @@ def test_C_P3_snapshot_ticket_labels_is_optional_and_validated():
         validate_snapshot(not_list)
     assert exc.value.code == "snapshot_bad_shape"
 
+    bad_at = make_snapshot(ticket_labels=[{"at": "yesterday", "action": "labeled", "label": STATUS}])
+    with pytest.raises(ToolError) as exc:
+        validate_snapshot(bad_at)
+    assert exc.value.code == "bad_time"
+
 
 # C-P4: old snapshots (no ticket_labels) and new ones score the same under a v1 config.
 def test_C_P4_ticket_labels_do_not_change_v1_score_bytes(tmp_path):
@@ -483,3 +489,116 @@ def test_C_P3_label_query_requests_both_event_types():
     # Without UnlabeledEvent the 'unlabeled' side of started_label history silently disappears.
     assert "itemTypes: [LABELED_EVENT, UNLABELED_EVENT]" in GRAPHQL_LABEL_QUERY
     assert "... on UnlabeledEvent" in GRAPHQL_LABEL_QUERY
+
+
+# C-P3 (ordering): events that share one second must not depend on the order gh returned them.
+def test_C_P3_same_second_events_order_does_not_change_bytes(tmp_path):
+    same = [
+        labeled("2030-01-02T02:00:00Z", STATUS),
+        labeled("2030-01-02T02:00:00Z", "status:other"),
+        unlabeled("2030-01-02T02:00:00Z", STATUS),
+    ]
+    outputs = set()
+    for i, order in enumerate(itertools.permutations(same)):
+        runner, _ = fetch_runner([label_page(list(order))])
+        out = tmp_path / f"{i}.json"
+        fetch_snapshot("acme/widgets#11", out, runner=runner)
+        outputs.add(out.read_bytes())
+    assert len(outputs) == 1
+
+
+# C-P5: only labeled events start the cycle; an earlier unlabeled event does not.
+def test_C_P5_unlabeled_before_first_labeled_does_not_start_cycle():
+    early_unlabel = [
+        {"at": "2030-01-02T01:00:00Z", "action": "unlabeled", "label": STATUS},
+        {"at": "2030-01-02T02:00:00Z", "action": "labeled", "label": STATUS},
+    ]
+    cfg = v2_config(started_label=STATUS)
+    report = score_ticket(make_snapshot(ticket_labels=early_unlabel), None, cfg)
+    assert report["metrics"]["cycle_basis"] == "ticket_label"
+    # 05:00 merged minus 02:00 first labeled (not 01:00 unlabeled)
+    assert report["metrics"]["cycle_seconds"] == 10800
+
+
+# C-P3 (fetch robustness): non-object JSON and a vanished issue are ToolErrors, not AttributeError.
+@pytest.mark.parametrize("body", ["[]", "null"])
+def test_C_P3_label_query_non_object_json_is_gh_failed(tmp_path, body):
+    def runner(argv):
+        if "LABELED_EVENT" in " ".join(argv):
+            return body, "", 0
+        return json.dumps(timeline_page([])), "", 0
+
+    out = tmp_path / "never.json"
+    with pytest.raises(ToolError) as exc:
+        fetch_snapshot("acme/widgets#11", out, runner=runner)
+    assert exc.value.code == "gh_failed"
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("body", ["[]", "null"])
+def test_C_P3_label_page_two_non_object_json_is_incomplete_pagination(tmp_path, body):
+    page1 = label_page([labeled("2030-01-02T02:00:00Z")], has_next=True, cursor="c2")
+
+    def runner(argv):
+        cmd = " ".join(argv)
+        if "LABELED_EVENT" in cmd:
+            return (body, "", 0) if "cursor=c2" in cmd else (json.dumps(page1), "", 0)
+        return json.dumps(timeline_page([])), "", 0
+
+    out = tmp_path / "never.json"
+    with pytest.raises(ToolError) as exc:
+        fetch_snapshot("acme/widgets#11", out, runner=runner)
+    assert exc.value.code == "incomplete_pagination"
+    assert not out.exists()
+
+
+def test_C_P3_label_page_two_issue_gone_is_incomplete_pagination(tmp_path):
+    page1 = label_page([labeled("2030-01-02T02:00:00Z")], has_next=True, cursor="c2")
+    gone = {"data": {"repository": {"issue": None}}}
+
+    def runner(argv):
+        cmd = " ".join(argv)
+        if "LABELED_EVENT" in cmd:
+            return json.dumps(gone if "cursor=c2" in cmd else page1), "", 0
+        return json.dumps(timeline_page([])), "", 0
+
+    out = tmp_path / "never.json"
+    with pytest.raises(ToolError) as exc:
+        fetch_snapshot("acme/widgets#11", out, runner=runner)
+    assert exc.value.code == "incomplete_pagination"
+    assert not out.exists()
+
+
+def test_C_P3_label_page_one_issue_missing_is_not_found(tmp_path):
+    runner, _ = fetch_runner([{"data": {"repository": {"issue": None}}}])
+    with pytest.raises(ToolError) as exc:
+        fetch_snapshot("acme/widgets#11", tmp_path / "never.json", runner=runner)
+    assert exc.value.code == "not_found"
+
+
+def test_C_P3_cli_non_object_label_json_is_one_stderr_line_exit_2(tmp_path, monkeypatch, capsys):
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    timeline = tmp_path / "timeline.json"
+    labels = tmp_path / "labels.json"
+    timeline.write_text(json.dumps(timeline_page([])))
+    labels.write_text("[]")
+    fake = fakebin / "gh"
+    fake.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  *LABELED_EVENT*) cat "$FAKE_GH_LABELS" ;;\n'
+        '  *) cat "$FAKE_GH_TIMELINE" ;;\n'
+        "esac\n"
+    )
+    os.chmod(fake, 0o755)
+    monkeypatch.setenv("PATH", f"{fakebin}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("FAKE_GH_LABELS", str(labels))
+    monkeypatch.setenv("FAKE_GH_TIMELINE", str(timeline))
+
+    rc = main(["fetch", "--ticket", "acme/widgets#11", "--out", str(tmp_path / "snap.json")])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert captured.out == ""
+    assert captured.err == "taskquality: error gh_failed: GraphQL label query returned a non-object JSON value\n"
