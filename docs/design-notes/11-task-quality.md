@@ -194,12 +194,14 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
   "src": "src",
   "tests": "tests",
   "applicable": true,
-  "totals": {"files": 6, "lines": 812, "functions": 40, "tests": 57},
+  "totals": {"files": 6, "lines": 812, "functions": 40, "tests": 57, "cognitive_units": 36, "cognitive": 212},
   "counts": {"long_files": 0, "long_functions": 1, "deep_functions": 1,
-             "ast_dup_functions": 0, "dup_windows": 3, "smell_events": 5},
+             "ast_dup_functions": 0, "dup_windows": 3, "smell_events": 5, "complex_functions": 1},
   "ratios": {"long_files": {"num": 0, "den": 6}, "long_functions": {"num": 1, "den": 40},
-             "deep_functions": {"num": 1, "den": 40}, "ast_dup_functions": {"num": 0, "den": 40}},
+             "deep_functions": {"num": 1, "den": 40}, "ast_dup_functions": {"num": 0, "den": 40},
+             "complex_functions": {"num": 1, "den": 36}},
   "findings": [
+    {"kind": "complex_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 23},
     {"kind": "deep_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 4},
     {"kind": "dup_windows", "file": "src/pkg/b.py", "function": null, "value": 3},
     {"kind": "dup_windows", "file": "src/pkg/c.py", "function": null, "value": 3},
@@ -218,25 +220,31 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `totals.lines` | 各檔行數加總（`metrics.lines_of`） |
 | `totals.functions` | 函式數 |
 | `totals.tests` | `tests` 底下 `.py` 檔中 `test_*` 函式數（`metrics.count_tests`） |
+| `totals.cognitive_units` | 計分單位數：不在任何函式內的函式（模組層函式與方法；class 可以多層）。巢狀函式、lambda、函式裡的 class 併入外層單位，不另算 |
+| `totals.cognitive` | 所有計分單位的認知複雜度加總（整數） |
 | `counts.long_files` | 行數 > 1000 的檔數 |
 | `counts.long_functions` | 長度（`end_lineno − lineno + 1`）> 50 的函式數 |
 | `counts.deep_functions` | 巢狀深度（`metrics.depth`）≥ 4 的函式數 |
 | `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總 |
 | `counts.dup_windows` | 6 行視窗（`metrics.windows`）出現在 ≥ 2 個不同檔的**相異**視窗數 |
-| `counts.smell_events` | 上面五項加總 |
-| `ratios.<k>` | 只有下面四項，`{num: counts.<k>, den}`；den＝0 時整個是 `null`。`dup_windows`、`smell_events` 沒有自然的分母，不給比率 |
+| `counts.complex_functions` | 認知複雜度 > 15 的計分單位數（只含計分單位，見 `totals.cognitive_units`） |
+| `counts.smell_events` | 上面五項加總（不含 `complex_functions`；加進去會改變既有欄位的值） |
+| `ratios.<k>` | 只有下面五項，`{num: counts.<k>, den}`；den＝0 時整個是 `null`。`dup_windows`、`smell_events` 沒有自然的分母，不給比率 |
 | `ratios.long_files` | den＝`totals.files` |
 | `ratios.long_functions` | den＝`totals.functions` |
 | `ratios.deep_functions` | den＝`totals.functions` |
 | `ratios.ast_dup_functions` | den＝`totals.functions` |
-| `findings` | 每個被計到的項目一筆：`long_file`（value＝行數，`function` 是 `null`）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`dup_windows`（每個至少含一個被計到的視窗的檔各一筆，value＝該檔含有的被計到的相異視窗數，`function` 是 `null`）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
+| `ratios.complex_functions` | den＝`totals.cognitive_units`。**不是** `totals.functions`：巢狀函式不是計分單位，所以這一項不能和上面三項直接比 |
+| `findings` | 每個被計到的項目一筆：`long_file`（value＝行數，`function` 是 `null`）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`complex_function`（認知複雜度，value＝該計分單位的值，`function` 是 qualname）、`dup_windows`（每個至少含一個被計到的視窗的檔各一筆，value＝該檔含有的被計到的相異視窗數，`function` 是 `null`）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
 | `applicable` | `src` 下有任何 `.py` |
 
 範例裡：`deep_functions` 1 筆、`long_functions` 1 筆（同一個函式兩項都中，各記一次）；`b.py` 與 `c.py` 共有 3 個相異 6 行視窗，所以 `dup_windows` 是 3，兩檔各一筆 value 3；`smell_events`＝0＋1＋1＋0＋3＝5。
 
 門檻（1000、50、4、6 行、5 行）與 `diff` 的事件定義相同，所以兩個命令的數字可以對照。
 
-缺值：`src` 下任一檔解析失敗 → `totals.functions`、`counts`、`ratios`、`findings` 都是 `null`（沿用 diff 的 fail-closed；`files`、`lines` 不用解析，照算）。`tests` 下任一檔解析失敗 → `totals.tests` 是 `null`。失敗的檔列在 `parse_failures`（`{file, scope}`，依 (`file`, `scope`) 排序）。
+認知複雜度（`totals.cognitive_units`、`totals.cognitive`、`counts.complex_functions`、`ratios.complex_functions`、`complex_function` 的 findings）是自寫、只用 `ast` 的近似，規則表在 `src/qmetrics/cognitive.py` 的模組 docstring 裡（R1–R18 的編號與說明都在那裡）。它不等於 SonarQube 的數字：括號內的布林運算序列、`match` 的 case guard、lambda 與遞迴的計法與 SonarQube 不同或未計。已知差異：同名（同 qualname）的函式若分別放在不同父節點下（例如 `def f` 與 `if X:` 裡的 `def f`），鍵會碰撞，後者覆蓋前者，前者的單位被丟掉（與 `metrics.funcs` 相同；見 #31）。門檻 15 是 `> 15` 才算，放在 `src/qmetrics/repo.py`。
+
+缺值：`src` 下任一檔解析失敗 → `totals.functions`、`totals.cognitive_units`、`totals.cognitive`、`counts`、`ratios`、`findings` 都是 `null`（沿用 diff 的 fail-closed；`files`、`lines` 不用解析，照算）。`tests` 下任一檔解析失敗 → `totals.tests` 是 `null`。失敗的檔列在 `parse_failures`（`{file, scope}`，依 (`file`, `scope`) 排序）。
 
 不輸出加權分數：要看「好不好」看 `ratios`，要看「哪裡」看 `findings`（§8 Q1 也適用於這裡）。
 

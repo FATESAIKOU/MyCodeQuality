@@ -87,7 +87,7 @@ def test_three():
     assert counts["smell_events"] == expected_smell
 
     ratios = d["ratios"]
-    assert set(ratios.keys()) == {"long_files", "long_functions", "deep_functions", "ast_dup_functions"}
+    assert {"long_files", "long_functions", "deep_functions", "ast_dup_functions"} <= set(ratios.keys())
     assert "dup_windows" not in ratios
     assert "smell_events" not in ratios
 
@@ -299,7 +299,7 @@ def test_C_A6_no_py_files_not_applicable(make_repo):
     assert d["totals"]["lines"] == 0
     assert d["totals"]["functions"] == 0
     assert d["totals"]["tests"] == 1
-    assert d["counts"] == {
+    old_counts = {
         "long_files": 0,
         "long_functions": 0,
         "deep_functions": 0,
@@ -307,12 +307,14 @@ def test_C_A6_no_py_files_not_applicable(make_repo):
         "dup_windows": 0,
         "smell_events": 0,
     }
-    assert d["ratios"] == {
+    assert old_counts.items() <= d["counts"].items()
+    old_ratios = {
         "long_files": None,
         "long_functions": None,
         "deep_functions": None,
         "ast_dup_functions": None,
     }
+    assert old_ratios.items() <= d["ratios"].items()
     assert d["findings"] == []
     assert d["parse_failures"] == []
 
