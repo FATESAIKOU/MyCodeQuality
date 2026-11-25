@@ -318,13 +318,13 @@
 - `--ticket OWNER/REPO#N`（必填）：目標工單識別碼，例如 `acme/widgets#11`。
 - `--search-repo OWNER/REPO`（選填，可重複指定）：篩選候選 PR 之儲存庫。若提供，則僅保留來自這些 repo 的候選 PR；未提供則不限制。
 - `--pr OWNER/REPO#N`（選填，可重複指定）：顯式指定要抓取的 PR。以此選項指定的 PR 一定會納入快照，不受 `--search-repo` 之過濾影響。
-- `--out SNAPSHOT.json`（必填）：快照輸出檔案路徑。寫入時採同目錄暫存檔搭配原子 rename；若中途有任何錯誤或抓取失敗，絕不留下殘缺檔案或覆寫現存檔案。
+- `--out SNAPSHOT.json`（必填）：快照輸出檔案路徑。上層目錄必須已存在（若不存在回報 `out_unwritable`，不自動建立目錄）。寫入時採同目錄暫存檔搭配原子 rename；若中途有任何錯誤或抓取失敗，先關閉暫存檔再 unlink 刪除，絕不留下殘缺檔案或覆寫現存檔案。
 
 ### 存取的 GitHub API
 1. **候選 PR 清單**：
-   - GraphQL API：查詢 `repository(owner, name).issue(number).timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT])`，取來源為 PullRequest 的項目。以 `pageInfo.endCursor` 分頁抓取全頁。
+   - GraphQL API：查詢 `repository(owner, name).issue(number).timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT])`，取來源為 PullRequest 的項目（`__typename == "PullRequest"`）。以 `pageInfo.endCursor` 分頁抓取全頁。
 2. **PR 基本資訊**：
-   - REST API：`GET /repos/{owner}/{repo}/pulls/{number}`，取得標題、本文、狀態、草稿狀態、建立／合併／關閉時刻、head SHA 與 merge commit SHA。
+   - REST API：`GET /repos/{owner}/{repo}/pulls/{number}`，取得標題、本文、狀態、草稿狀態、建立／合併／關閉時刻、head SHA 與 merge commit SHA。快照輸出之 PR 識別碼依 API 回傳的規範 repo 寫法（`base.repo.full_name`）結合 PR 號碼，並依 (owner/repo 小寫, number) 去重。
 3. **PR 留言**：
    - REST API：`GET /repos/{owner}/{repo}/issues/{number}/comments`（以 `--paginate` 分頁）。留言僅保留第一行（`first_line`），不存作者或帳號資訊。
 4. **GitHub 正式 Review**：
@@ -337,5 +337,5 @@
    - REST API：若 workflow run 之 `run_attempt > 1`，呼叫 `GET /repos/{owner}/{repo}/actions/runs/{id}/attempts/{k}`（$k = 1 \dots \text{run\_attempt}-1$）補齊先前的 attempt 記錄。
 
 ### 分頁與限流處理
-- **分頁**：REST 請求使用 `gh api --paginate`，GraphQL 迴圈檢查 `pageInfo.hasNextPage` 與 `endCursor`。任何分頁抓取中途失敗即視為工具錯誤（`incomplete_pagination`），不寫出快照。
-- **限流重試**：當 API 回傳 403 或 429 且帶有限流標頭（`Retry-After` 或 `x-ratelimit-reset`）時，自動重試最多 3 次（共 4 次請求），等待秒數單次上限 60 秒。若重試用盡則拋出 `rate_limited` 工具錯誤。
+- **分頁**：REST 請求使用 `gh api --paginate`，GraphQL 迴圈檢查 `pageInfo.hasNextPage` 與 `endCursor`。任何 REST 分頁呼叫或 GraphQL 分頁中途回傳非 0 狀態碼，一律視為工具錯誤（`incomplete_pagination`），不寫出快照（僅單頁端點失敗使用 `gh_failed`）。
+- **限流偵測與重試**：當指令執行回傳非 0 且 stderr 包含 `(HTTP 429)` 或 `(HTTP 403)` 且訊息包含 `rate limit`（不分大小寫），或 GraphQL 回應中包含 `errors[].type == "RATE_LIMITED"`，均視為觸發限流。若回應帶有 `Retry-After` 或 `x-ratelimit-reset` 標頭文字則依其等待，若無標頭則固定等待 60 秒（單次睡眠上限 60 秒）。最多自動重試 3 次（共 4 次請求）；若重試用盡仍被限流，則拋出 `rate_limited` 工具錯誤。

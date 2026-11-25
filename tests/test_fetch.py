@@ -981,3 +981,317 @@ def test_item5_fetch_snapshot_direct_bad_explicit_prs(tmp_path: Path):
         fetch_snapshot("acme/widgets#11", out_file, search_repos=["no_slash_repo"])
     assert exc_info.value.code == "bad_arguments"
 
+
+# --- Regression tests for BRIEF-19 (H1, H2, L1, M1, M2, M3, L2, L3, L4) ---
+
+
+def test_h1_timeline_issue_source_ignored(tmp_path: Path):
+    """H1: Only timeline items with __typename == 'PullRequest' are collected; Issue sources are ignored and /pulls/<num> is never called."""
+    out_file = tmp_path / "snap_h1.json"
+    pulls_called = []
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv)
+        if "graphql" in cmd_str:
+            resp = {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "timelineItems": {
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                                "nodes": [
+                                    {
+                                        "__typename": "ConnectedEvent",
+                                        "subject": {
+                                            "__typename": "PullRequest",
+                                            "number": 21,
+                                            "repository": {"nameWithOwner": "acme/widgets"},
+                                        },
+                                    },
+                                    {
+                                        "__typename": "CrossReferencedEvent",
+                                        "source": {
+                                            "__typename": "Issue",
+                                            "number": 7,
+                                            "repository": {"nameWithOwner": "acme/widgets"},
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    }
+                }
+            }
+            return json.dumps(resp), "", 0
+
+        if "/repos/acme/widgets/pulls/7" in cmd_str:
+            pulls_called.append(7)
+            return "", "gh: Not Found (HTTP 404)", 1
+
+        if "/repos/acme/widgets/pulls/21" in cmd_str and "--paginate" not in argv:
+            pulls_called.append(21)
+
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner)
+    assert 7 not in pulls_called, "Should never call /pulls/7 for an Issue timeline source"
+    assert 21 in pulls_called
+    assert len(snap["prs"]) == 1
+    assert snap["prs"][0]["id"] == "acme/widgets#21"
+
+
+def test_h2_rate_limit_real_gh_stderr_403(tmp_path: Path):
+    """H2: Real gh failure format `gh: <msg> (HTTP 403)` with 'rate limit' in msg and no headers waits 60s and retries."""
+    out_file = tmp_path / "snap_h2_403.json"
+    sleep_calls = []
+
+    def mock_sleeper(sec: float):
+        sleep_calls.append(sec)
+
+    attempts = 0
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return "", "gh: API rate limit exceeded for user (HTTP 403)", 1
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner, sleeper=mock_sleeper)
+    assert snap["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [60]
+
+
+def test_h2_rate_limit_real_gh_stderr_429(tmp_path: Path):
+    """H2: Real gh failure format `gh: Too Many Requests (HTTP 429)` without headers waits 60s and retries."""
+    out_file = tmp_path / "snap_h2_429.json"
+    sleep_calls = []
+
+    def mock_sleeper(sec: float):
+        sleep_calls.append(sec)
+
+    attempts = 0
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return "", "gh: Too Many Requests (HTTP 429)", 1
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner, sleeper=mock_sleeper)
+    assert snap["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [60]
+
+
+def test_h2_forbidden_403_without_rate_limit_not_retried(tmp_path: Path):
+    """H2: HTTP 403 error without 'rate limit' in message is treated as normal gh_failed and not retried."""
+    out_file = tmp_path / "snap_h2_forbidden.json"
+    sleep_calls = []
+
+    def mock_sleeper(sec: float):
+        sleep_calls.append(sec)
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        if "/repos/acme/widgets/pulls/21" in " ".join(argv) and "--paginate" not in argv:
+            return "", "gh: Forbidden (HTTP 403)", 1
+        return make_golden_runner()(argv)
+
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner, sleeper=mock_sleeper)
+    assert exc_info.value.code == "gh_failed"
+    assert len(sleep_calls) == 0
+
+
+def test_l1_rate_limit_429_code_no_headers_waits_60s(tmp_path: Path):
+    """L1: HTTP 429 without headers waits fixed 60s instead of 1s."""
+    out_file = tmp_path / "snap_l1.json"
+    sleep_calls = []
+
+    def mock_sleeper(sec: float):
+        sleep_calls.append(sec)
+
+    attempts = 0
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return "Too Many Requests", "", 429
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner, sleeper=mock_sleeper)
+    assert snap["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [60]
+
+
+def test_m1_rest_pagination_failure_raises_incomplete_pagination(tmp_path: Path):
+    """M1: REST pagination calls returning non-zero code raise incomplete_pagination regardless of error message."""
+    endpoints = [
+        "/repos/acme/widgets/issues/21/comments",
+        "/repos/acme/widgets/pulls/21/reviews",
+        "/repos/acme/widgets/pulls/21/commits",
+        "/repos/acme/widgets/actions/runs",
+    ]
+
+    for ep in endpoints:
+        out_file = tmp_path / f"snap_m1_{ep.split('/')[-1]}.json"
+
+        def mock_runner(argv: list[str], failed_ep=ep) -> tuple[str, str, int]:
+            if failed_ep in " ".join(argv):
+                return "", "gh: Server Error (HTTP 502)", 1
+            return make_golden_runner()(argv)
+
+        with pytest.raises(ToolError) as exc_info:
+            fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner)
+        assert exc_info.value.code == "incomplete_pagination", f"Expected incomplete_pagination for {ep}"
+        assert not out_file.exists()
+
+
+def test_m2_graphql_rate_limited_retry_success_and_exhausted(tmp_path: Path):
+    """M2: GraphQL errors with type RATE_LIMITED trigger rate limit retries."""
+    out_file = tmp_path / "snap_m2.json"
+    sleep_calls = []
+
+    def mock_sleeper(sec: float):
+        sleep_calls.append(sec)
+
+    # 1. Success on 2nd attempt
+    attempts = 0
+
+    def mock_runner_success(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempts
+        if "graphql" in argv:
+            attempts += 1
+            if attempts == 1:
+                rl_resp = {"errors": [{"type": "RATE_LIMITED", "message": "API rate limit exceeded"}]}
+                return json.dumps(rl_resp), "", 0
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner_success, sleeper=mock_sleeper)
+    assert snap["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [60]
+
+    # 2. Exhaustion after 3 retries (4 attempts)
+    sleep_calls.clear()
+
+    def mock_runner_exhaust(argv: list[str]) -> tuple[str, str, int]:
+        if "graphql" in argv:
+            rl_resp = {"errors": [{"type": "RATE_LIMITED", "message": "API rate limit exceeded"}]}
+            return json.dumps(rl_resp), "", 0
+        return make_golden_runner()(argv)
+
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=mock_runner_exhaust, sleeper=mock_sleeper)
+    assert exc_info.value.code == "rate_limited"
+    assert sleep_calls == [60, 60, 60]
+
+
+def test_m3_pr_id_case_insensitive_deduplication(tmp_path: Path):
+    """M3: PR id deduplicated by (owner/repo.lower(), number) and output id uses canonical casing from API."""
+    out_file = tmp_path / "snap_m3.json"
+    fetch_counts = {"21": 0}
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv)
+        if "/repos/" in cmd_str and "/pulls/21" in cmd_str and "--paginate" not in argv:
+            fetch_counts["21"] += 1
+            golden_out, err, code = make_golden_runner()(argv)
+            data = json.loads(golden_out)
+            data["base"] = {"repo": {"full_name": "acme/widgets"}}
+            return json.dumps(data), err, code
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot(
+        ticket="acme/widgets#11",
+        out_path=out_file,
+        explicit_prs=["ACME/Widgets#21", "acme/WIDGETS#21"],
+        runner=mock_runner,
+    )
+    pr_ids = [p["id"] for p in snap["prs"]]
+    assert pr_ids == ["acme/widgets#21", "acme/widgets#30"]
+    assert fetch_counts["21"] == 1
+
+
+def test_l2_atomic_write_failure_closes_before_unlink(tmp_path: Path, monkeypatch):
+    """L2: In atomic write error path, temporary file is closed before unlinking."""
+    import tempfile
+    out_file = tmp_path / "snap_l2.json"
+    events = []
+
+    real_named_temp = tempfile.NamedTemporaryFile
+
+    def spy_named_temp(*args, **kwargs):
+        f = real_named_temp(*args, **kwargs)
+        orig_close = f.close
+        orig_unlink = Path.unlink
+
+        def spy_close():
+            events.append("close")
+            return orig_close()
+
+        def spy_unlink(self_path, *uargs, **ukwargs):
+            events.append("unlink")
+            return orig_unlink(self_path, *uargs, **ukwargs)
+
+        f.close = spy_close
+        monkeypatch.setattr(Path, "unlink", spy_unlink)
+        return f
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", spy_named_temp)
+    monkeypatch.setattr("os.fsync", lambda fd: (_ for _ in ()).throw(OSError("simulated disk error")))
+
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=make_golden_runner())
+    assert exc_info.value.code == "out_unwritable"
+    assert events == ["close", "unlink"]
+
+
+def test_l3_missing_fields_and_unrecognized_returns_converted_to_tool_error(tmp_path: Path):
+    """L3: Missing API fields or non-ToolError exceptions in runner become ToolError and exit 2 in CLI."""
+    out_file = tmp_path / "snap_l3.json"
+
+    # 1. Missing created_at in PR response
+    def missing_created_at_runner(argv: list[str]) -> tuple[str, str, int]:
+        out, err, code = make_golden_runner()(argv)
+        if "/repos/acme/widgets/pulls/21" in " ".join(argv) and "--paginate" not in argv:
+            data = json.loads(out)
+            del data["created_at"]
+            return json.dumps(data), err, code
+        return out, err, code
+
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=missing_created_at_runner)
+    assert exc_info.value.code == "gh_failed"
+
+    # 2. Missing id in actions run
+    def missing_run_id_runner(argv: list[str]) -> tuple[str, str, int]:
+        out, err, code = make_golden_runner()(argv)
+        if "/repos/acme/widgets/actions/runs" in " ".join(argv):
+            data = json.loads(out)
+            del data["id"]
+            return json.dumps([data]), err, code
+        return out, err, code
+
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=missing_run_id_runner)
+    assert exc_info.value.code == "gh_failed"
+
+    # 3. CLI exit code 2 on tool error
+    rc = main(["fetch", "--ticket", "acme/widgets#11", "--out", str(out_file)])
+    assert rc == 2
+
+
+def test_l4_out_parent_directory_not_exists_raises_out_unwritable(tmp_path: Path):
+    """L4: If parent directory of --out does not exist, raises out_unwritable and does not create it."""
+    nonexistent_dir = tmp_path / "no" / "such" / "dir"
+    out_file = nonexistent_dir / "snapshot.json"
+
+    assert not nonexistent_dir.exists()
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=make_golden_runner())
+    assert exc_info.value.code == "out_unwritable"
+    assert "parent directory does not exist" in exc_info.value.message
+    assert not nonexistent_dir.exists()
+
+
