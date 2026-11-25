@@ -87,6 +87,7 @@ def run_repo(a):
         warnings = gitio.preflight(git, history=False)
         rev = gitio.resolve_commit(git, a.rev)
         result = repo.analyze(git, rev, a.src, a.tests)
+        codes = result.pop("warnings")  # analyze's codes join preflight's: one sorted, de-duplicated list
         return {
             "kind": "qmetrics-repo",
             "schema_version": REPO_SCHEMA_VERSION,
@@ -97,7 +98,7 @@ def run_repo(a):
             "src": a.src,
             "tests": a.tests,
             **result,
-            "warnings": warnings,
+            "warnings": sorted(set(warnings) | set(codes)),
         }
 
 
