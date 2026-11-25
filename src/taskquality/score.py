@@ -12,8 +12,7 @@ from taskquality.formats import (
     parse_pr_id,
 )
 
-TOOL_VERSION = "0.3.0"
-SCHEMA_VERSION = 1
+from taskquality import SCHEMA_VERSION, __version__ as TOOL_VERSION
 
 TOKEN_KEYS = [
     "input_tokens",

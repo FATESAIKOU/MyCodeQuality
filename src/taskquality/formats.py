@@ -21,9 +21,9 @@ RECOGNIZED_CONFIG_KEYS = frozenset([
     "verdict_sources",
 ])
 
-ISO_UTC_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$")
-PR_ID_RE = re.compile(r"^([^#]+)#(\d+)$")
-HEX_HEAD_RE = re.compile(r"^[0-9a-f]{7,40}$")
+ISO_UTC_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z\Z")
+PR_ID_RE = re.compile(r"^([^#]+)#(\d+)\Z")
+HEX_HEAD_RE = re.compile(r"^[0-9a-f]{7,40}\Z")
 VALID_USAGE_ROLES = frozenset(["impl", "review", "arch", "pm", "other"])
 USAGE_INT_KEYS = frozenset([
     "input_tokens",
@@ -74,6 +74,8 @@ def read_json_file(path: str | Path, kind_name: str) -> dict:
     p = Path(path)
     try:
         content = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ToolError("file_not_json", f"file is not valid UTF-8/JSON ({path}): {e}") from e
     except OSError as e:
         raise ToolError("file_unreadable", f"cannot read {path}: {e}") from e
 
@@ -89,10 +91,12 @@ def read_json_file(path: str | Path, kind_name: str) -> dict:
 
 def validate_snapshot(snap: dict) -> None:
     """Validate snapshot structure."""
+    if not isinstance(snap, dict):
+        raise ToolError("snapshot_bad_shape", "snapshot must be a JSON object")
     if snap.get("kind") != "taskquality-snapshot" or snap.get("schema_version") != 1:
         raise ToolError("snapshot_bad_shape", "snapshot must have kind='taskquality-snapshot' and schema_version=1")
     ticket = snap.get("ticket")
-    if not isinstance(ticket, str) or not PR_ID_RE.match(ticket):
+    if not isinstance(ticket, str) or not PR_ID_RE.match(ticket) or "/" not in ticket.split("#")[0]:
         raise ToolError("snapshot_bad_shape", f"snapshot has invalid ticket: {ticket!r}")
     prs = snap.get("prs")
     if not isinstance(prs, list):
@@ -101,9 +105,25 @@ def validate_snapshot(snap: dict) -> None:
     for pr in prs:
         if not isinstance(pr, dict):
             raise ToolError("snapshot_bad_shape", "PR item must be an object")
-        parse_pr_id(pr.get("id"))
-        created_at = pr.get("created_at")
-        parse_iso_utc(created_at)
+        if "id" not in pr or not isinstance(pr["id"], str):
+            raise ToolError("snapshot_bad_shape", "PR id is required and must be a string")
+        parse_pr_id(pr["id"], "snapshot_bad_shape")
+
+        if "title" not in pr or not isinstance(pr["title"], str):
+            raise ToolError("snapshot_bad_shape", "PR title is required and must be a string")
+        if "body" not in pr or not isinstance(pr["body"], str):
+            raise ToolError("snapshot_bad_shape", "PR body is required and must be a string")
+        state = pr.get("state")
+        if not isinstance(state, str) or state not in ("open", "closed"):
+            raise ToolError("snapshot_bad_shape", "PR state must be 'open' or 'closed'")
+        head_sha = pr.get("head_sha")
+        if not isinstance(head_sha, str) or not head_sha:
+            raise ToolError("snapshot_bad_shape", "PR head_sha is required and must be a non-empty string")
+
+        if "created_at" not in pr or pr["created_at"] is None:
+            raise ToolError("snapshot_bad_shape", "PR created_at is required")
+        parse_iso_utc(pr["created_at"])
+
         merged_at = pr.get("merged_at")
         if merged_at is not None:
             parse_iso_utc(merged_at)
@@ -111,39 +131,76 @@ def validate_snapshot(snap: dict) -> None:
         if closed_at is not None:
             parse_iso_utc(closed_at)
 
-        for c in pr.get("comments", []):
-            if not isinstance(c, dict) or "id" not in c or "first_line" not in c:
-                raise ToolError("snapshot_bad_shape", "invalid comment structure")
-            parse_iso_utc(c.get("created_at"))
+        comments = pr.get("comments")
+        if not isinstance(comments, list):
+            raise ToolError("snapshot_bad_shape", "PR comments must be a list")
+        for c in comments:
+            if not isinstance(c, dict):
+                raise ToolError("snapshot_bad_shape", "comment item must be an object")
+            if "id" not in c or isinstance(c["id"], bool) or not isinstance(c["id"], int):
+                raise ToolError("snapshot_bad_shape", "comment id must be an integer")
+            if "first_line" not in c or not isinstance(c["first_line"], str):
+                raise ToolError("snapshot_bad_shape", "comment first_line must be a string")
+            if "created_at" not in c or c["created_at"] is None:
+                raise ToolError("snapshot_bad_shape", "comment created_at is required")
+            parse_iso_utc(c["created_at"])
 
-        for r in pr.get("reviews", []):
-            if not isinstance(r, dict) or "id" not in r or "state" not in r or "commit_id" not in r:
-                raise ToolError("snapshot_bad_shape", "invalid review structure")
-            commit_id = r["commit_id"]
+        reviews = pr.get("reviews")
+        if not isinstance(reviews, list):
+            raise ToolError("snapshot_bad_shape", "PR reviews must be a list")
+        for r in reviews:
+            if not isinstance(r, dict):
+                raise ToolError("snapshot_bad_shape", "review item must be an object")
+            if "id" not in r or isinstance(r["id"], bool) or not isinstance(r["id"], int):
+                raise ToolError("snapshot_bad_shape", "review id must be an integer")
+            if "state" not in r or not isinstance(r["state"], str):
+                raise ToolError("snapshot_bad_shape", "review state must be a string")
+            commit_id = r.get("commit_id")
             if not isinstance(commit_id, str) or not commit_id:
                 raise ToolError("snapshot_bad_shape", f"review commit_id must be a non-empty string: {commit_id!r}")
-            parse_iso_utc(r.get("submitted_at"))
+            if "submitted_at" not in r or r["submitted_at"] is None:
+                raise ToolError("snapshot_bad_shape", "review submitted_at is required")
+            parse_iso_utc(r["submitted_at"])
 
-        for run in pr.get("ci_runs", []):
-            if not isinstance(run, dict) or "run_id" not in run or "workflow" not in run:
-                raise ToolError("snapshot_bad_shape", "invalid ci_run structure")
+        ci_runs = pr.get("ci_runs")
+        if not isinstance(ci_runs, list):
+            raise ToolError("snapshot_bad_shape", "PR ci_runs must be a list")
+        for run in ci_runs:
+            if not isinstance(run, dict):
+                raise ToolError("snapshot_bad_shape", "ci_run item must be an object")
+            if "run_id" not in run or isinstance(run["run_id"], bool) or not isinstance(run["run_id"], int):
+                raise ToolError("snapshot_bad_shape", "ci_run run_id must be an integer")
+            if "workflow" not in run or not isinstance(run["workflow"], str):
+                raise ToolError("snapshot_bad_shape", "ci_run workflow must be a string")
+            run_head = run.get("head_sha")
+            if not isinstance(run_head, str) or not run_head:
+                raise ToolError("snapshot_bad_shape", "ci_run head_sha must be a non-empty string")
             run_attempt = run.get("run_attempt")
             if run_attempt is None or isinstance(run_attempt, bool) or not isinstance(run_attempt, int):
                 raise ToolError("snapshot_bad_shape", f"ci_run run_attempt must be an integer: {run_attempt!r}")
-            parse_iso_utc(run.get("created_at"))
+            if "created_at" not in run or run["created_at"] is None:
+                raise ToolError("snapshot_bad_shape", "ci_run created_at is required")
+            parse_iso_utc(run["created_at"])
+            status = run.get("status")
+            if not isinstance(status, str):
+                raise ToolError("snapshot_bad_shape", "ci_run status must be a string")
+            conclusion = run.get("conclusion")
+            if conclusion is not None and not isinstance(conclusion, str):
+                raise ToolError("snapshot_bad_shape", "ci_run conclusion must be a string or null")
 
 
 def validate_input(input_data: dict, snapshot_ticket: str) -> None:
     """Validate input structure and ticket match."""
+    if not isinstance(input_data, dict):
+        raise ToolError("input_bad_shape", "input must be a JSON object")
     if input_data.get("kind") != "taskquality-input" or input_data.get("schema_version") != 1:
         raise ToolError("input_bad_shape", "input must have kind='taskquality-input' and schema_version=1")
     in_ticket = input_data.get("ticket")
     if in_ticket != snapshot_ticket:
         raise ToolError("ticket_mismatch", f"snapshot ticket ({snapshot_ticket}) does not match input ticket ({in_ticket})")
 
-    started_at = input_data.get("started_at")
-    if started_at is not None:
-        parse_iso_utc(started_at)
+    if "started_at" in input_data and input_data["started_at"] is not None:
+        parse_iso_utc(input_data["started_at"])
 
     if "prs" in input_data and input_data["prs"] is not None:
         if not isinstance(input_data["prs"], dict):
@@ -158,9 +215,14 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
                 for v in pr_override["verdicts"]:
                     if not isinstance(v, dict):
                         raise ToolError("input_bad_shape", "verdict item must be an object")
-                    parse_iso_utc(v.get("at"))
-                    if v.get("verdict") not in ("pass", "fail", "other"):
-                        raise ToolError("input_bad_shape", f"invalid verdict value: {v.get('verdict')!r}")
+                    if "at" not in v or v["at"] is None:
+                        raise ToolError("input_bad_shape", "verdict at is required")
+                    parse_iso_utc(v["at"])
+                    if "role" not in v or not isinstance(v["role"], str) or not v["role"]:
+                        raise ToolError("input_bad_shape", "verdict item missing role")
+                    v_val = v.get("verdict")
+                    if not isinstance(v_val, str) or v_val not in ("pass", "fail", "other"):
+                        raise ToolError("input_bad_shape", f"invalid verdict value: {v_val!r}")
                     head = v.get("head")
                     if not isinstance(head, str) or not HEX_HEAD_RE.match(head):
                         raise ToolError("input_bad_shape", f"verdict head must be 7-40 lowercase hex digits: {head!r}")
@@ -181,7 +243,7 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
             if not isinstance(model, str) or not model:
                 raise ToolError("input_bad_shape", f"usage item model must be a non-empty string: {model!r}")
             role = item.get("role")
-            if role not in VALID_USAGE_ROLES:
+            if not isinstance(role, str) or role not in VALID_USAGE_ROLES:
                 raise ToolError("input_bad_shape", f"invalid usage role: {role!r}")
             if "pr" in item and item["pr"] is not None:
                 parse_pr_id(item["pr"], "input_bad_shape")
@@ -204,6 +266,8 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
 
 def validate_config(cfg: dict) -> None:
     """Validate config structure and compile regex."""
+    if not isinstance(cfg, dict):
+        raise ToolError("config_bad_shape", "config must be a JSON object")
     if cfg.get("kind") != "taskquality-config" or cfg.get("schema_version") != 1:
         raise ToolError("config_bad_shape", "config must have kind='taskquality-config' and schema_version=1")
 
@@ -223,9 +287,33 @@ def validate_config(cfg: dict) -> None:
         if k not in cfg:
             raise ToolError("config_bad_shape", f"config missing required key: {k}")
 
+    list_str_keys = [
+        "ticket_ref_keywords",
+        "review_roles",
+        "pass_verdicts",
+        "fail_verdicts",
+        "rework_keywords",
+        "ci_green_conclusions",
+    ]
+    for k in list_str_keys:
+        val = cfg[k]
+        if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+            raise ToolError("config_bad_shape", f"config {k} must be a list of strings")
+
+    gh_role = cfg["github_review_role"]
+    if not isinstance(gh_role, str) or not gh_role:
+        raise ToolError("config_bad_shape", "config github_review_role must be a non-empty string")
+
+    ci_wf = cfg["ci_workflows"]
+    if ci_wf is not None:
+        if not isinstance(ci_wf, list) or not all(isinstance(x, str) for x in ci_wf):
+            raise ToolError("config_bad_shape", "config ci_workflows must be null or a list of strings")
+
     sources = cfg.get("verdict_sources")
     if not isinstance(sources, list) or len(sources) == 0:
         raise ToolError("config_bad_shape", "verdict_sources must be a non-empty list")
+    if not all(isinstance(s, str) for s in sources):
+        raise ToolError("config_bad_shape", "verdict_sources elements must be strings")
     if len(sources) != len(set(sources)):
         raise ToolError("config_bad_shape", "verdict_sources cannot contain duplicates")
     for s in sources:
