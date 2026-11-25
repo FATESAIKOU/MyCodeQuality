@@ -196,10 +196,11 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
   "applicable": true,
   "totals": {"files": 6, "lines": 812, "functions": 40, "tests": 57, "cognitive_units": 36, "cognitive": 212},
   "counts": {"long_files": 0, "long_functions": 1, "deep_functions": 1,
-             "ast_dup_functions": 0, "dup_windows": 3, "smell_events": 5, "complex_functions": 1},
+             "ast_dup_functions": 0, "dup_windows": 3, "smell_events": 5, "complex_functions": 1,
+             "dup_lines": 16},
   "ratios": {"long_files": {"num": 0, "den": 6}, "long_functions": {"num": 1, "den": 40},
              "deep_functions": {"num": 1, "den": 40}, "ast_dup_functions": {"num": 0, "den": 40},
-             "complex_functions": {"num": 1, "den": 36}},
+             "complex_functions": {"num": 1, "den": 36}, "dup_lines": {"num": 16, "den": 812}},
   "findings": [
     {"kind": "complex_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 23},
     {"kind": "deep_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 4},
@@ -239,18 +240,22 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總 |
 | `counts.dup_windows` | 6 行視窗（`metrics.windows`）出現在 ≥ 2 個不同檔的**相異**視窗數 |
 | `counts.complex_functions` | 認知複雜度 > 15 的計分單位數（只含計分單位，見 `totals.cognitive_units`） |
-| `counts.smell_events` | 上面五項加總（不含 `complex_functions`；加進去會改變既有欄位的值） |
-| `ratios.<k>` | 只有下面五項，`{num: counts.<k>, den}`；den＝0 時整個是 `null`。`dup_windows`、`smell_events` 沒有自然的分母，不給比率 |
+| `counts.dup_lines` | 相異的 (檔, 行號)：落在某個被計到的視窗（即 `dup_windows` 計的那些）裡的**有效行**（通過 `metrics.windows` 過濾的行）。同一行被多個視窗蓋到只算一次；同檔內的重複不算。與 `dup_windows` 不同，這是行數，不是視窗數 |
+| `counts.smell_events` | 上面五項加總（不含 `complex_functions`、`dup_lines`；加進去會改變既有欄位的值） |
+| `ratios.<k>` | 只有下面六項，`{num: counts.<k>, den}`；den＝0 時整個是 `null`。`dup_windows`、`smell_events` 沒有自然的分母，不給比率 |
 | `ratios.long_files` | den＝`totals.files` |
 | `ratios.long_functions` | den＝`totals.functions` |
 | `ratios.deep_functions` | den＝`totals.functions` |
 | `ratios.ast_dup_functions` | den＝`totals.functions` |
 | `ratios.complex_functions` | den＝`totals.cognitive_units`。**不是** `totals.functions`：巢狀函式不是計分單位，所以這一項不能和上面三項直接比 |
+| `ratios.dup_lines` | den＝`totals.lines`（實體行數，含空行與註解）。見下方精度說明 |
 | `arch` | 模組相依（§4.2 的 M2，`src/qmetrics/imports.py`）。`modules`：模組數；`edges`：去重後的模組間邊數（篩選後，見下）；`cycles`：大小 ≥ 2 的強連通分量數（Tarjan，迭代版）；`modules_in_cycles`：這些分量的模組數加總；`max_fan_in`／`max_fan_out`：模組層入邊數／出邊數的最大值；`unresolved_internal_like`、`unresolved_self_prefix`：§4.2 第 2 點的兩個訊號，每個別名最多計一次；`shadowed_files`：被同名 package 遮住的檔（`x.py` 與 `x/__init__.py` 並存時是 `x.py`），依路徑排序；`packages[]`：依 `package` 排序，每個 package 的 `modules`、`ca`、`ce`、`instability`（`{num: ce, den: ca+ce}`，den＝0 時 `null`）。模組名相對於 import 根算（`--src` 有 `__init__.py` 時前綴是 `--src` 的目錄名）。**篩選（Q-M2）**：函式內 import 與 `TYPE_CHECKING` 底下的 import 都算邊；`__init__` 重新匯出造成的 package↔子模組邊（X→P，P 是 `__init__` 模組、X 的名稱以 `P.` 開頭）不算邊。篩選後的同一組邊用於 `edges`、循環、fan 與 Ca／Ce。循環數是趨勢，不是問題清單：有型別標註的專案幾乎不會是 0。**import 根的限制**：`--src` 有 `__init__.py` 時前綴是目錄名（`--src .` 沒有前綴）；超出 import 根的相對 import（例如深度 1 的 package 裡的 `from ...y import z`）不算邊；`from ..y import z` 在深度 1 的 package 裡連到 root 層的模組 `y`（已知的寬鬆行為，刻意保留）。已知盲點：扁平 import（`--src` 底下有 `__init__.py` 的 package 裡寫 `import util`）解析不到，靜默算 0 邊、不發警告。`arch_import_root_suspect`：有無法解析的 import 對得上 `--src` 底下更深一層的模組（`--src` 可能太淺），或以 `--src` 目錄名開頭（import 根可能是它的上一層）；只發警告，數字不變。`arch_module_shadowed`：兩個檔給出同一個模組名（`x.py` 與 `x/__init__.py`，或 `a.b.py` 與 `a/b.py`），其中一個列在 `shadowed_files`、不分析。 |
 | `findings` | 每個被計到的項目一筆：`import_cycle`（在循環裡的每個模組一筆，value＝該循環的模組數，`function` 是 `null`）、`long_file`（value＝行數，`function` 是 `null`）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`complex_function`（認知複雜度，value＝該計分單位的值，`function` 是 qualname）、`dup_windows`（每個至少含一個被計到的視窗的檔各一筆，value＝該檔含有的被計到的相異視窗數，`function` 是 `null`）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
 | `applicable` | `src` 下有任何 `.py` |
 
-範例裡：`deep_functions` 1 筆、`long_functions` 1 筆（同一個函式兩項都中，各記一次）；`b.py` 與 `c.py` 共有 3 個相異 6 行視窗，所以 `dup_windows` 是 3，兩檔各一筆 value 3；`smell_events`＝0＋1＋1＋0＋3＝5。
+範例裡：`deep_functions` 1 筆、`long_functions` 1 筆（同一個函式兩項都中，各記一次）；`b.py` 與 `c.py` 共有 3 個相異 6 行視窗，所以 `dup_windows` 是 3，兩檔各一筆 value 3；`smell_events`＝0＋1＋1＋0＋3＝5。`dup_lines` 是 16：`b.py` 與 `c.py` 各有 8 個有效行落在那 3 個視窗裡（3 個視窗共蓋住 8 行，不是 3×6），兩檔合計 16。
+
+重複行數（`counts.dup_lines`、`ratios.dup_lines`）是粗估，分子與分母的定義不一致，要這樣讀：分子只算通過 `windows` 過濾的行（非空、非 `#` 開頭、長度 ≥ 4）；分母 `totals.lines` 是實體行（含空行與註解）。所以重複的程式中間穿插空行或註解時，比率會偏低（審查者的例子：8 行相同程式、每行之間穿插空行與註解，實體 25 行，分子只有 8）。已知差別：只算**跨檔**的重複（同檔內重複為 0）；視窗是 6 行、以行而非 token 計（SonarQube 用 token 與 10 行，所以數字不能直接比）；`#` 是唯一認得的註解（`//`、`/* */` 不認得）。之後要提升精度，可改分母為「通過同一過濾的行數」（新欄位），或改用 token 視窗。不設門檻，只報告。
 
 門檻（1000、50、4、6 行、5 行）與 `diff` 的事件定義相同，所以兩個命令的數字可以對照。
 

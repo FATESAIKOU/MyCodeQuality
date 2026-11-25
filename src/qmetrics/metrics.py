@@ -92,6 +92,20 @@ def windows(lines):
     return {tuple(ks[i:i + WIN]) for i in range(len(ks) - WIN + 1)}
 
 
+def window_lines(lines):
+    """-> {window: set of 1-based line numbers of its rows}; the keys are exactly `windows`."""
+    ks = []
+    for n, x in enumerate(lines, 1):
+        s = x.strip()
+        if s and not s.startswith("#") and len(s) >= 4:
+            ks.append((n, s))
+    out = {}
+    for i in range(len(ks) - WIN + 1):
+        rows = ks[i:i + WIN]
+        out.setdefault(tuple(s for _, s in rows), set()).update(n for n, _ in rows)
+    return out
+
+
 def list_tree(git, rev, prefix):
     """path -> blob sha of the .py files under prefix at rev (symlinks and submodules skipped)."""
     args = ["ls-tree", "-r", "-z", rev]

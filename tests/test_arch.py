@@ -485,7 +485,12 @@ def test_C_M5_old_fields_are_unchanged_by_arch(make_repo):
     cyc = run_repo(r.path, "--json").data()
     assert cyc["arch"]["cycles"] == 1
     assert cyc["counts"] == plain["counts"]
-    assert cyc["ratios"] == plain["ratios"]
+    # ratios.dup_lines has den = totals.lines (design §7.1), so the two import lines move it;
+    # every other ratio must still match exactly
+    assert {k: v for k, v in cyc["ratios"].items() if k != "dup_lines"} == \
+        {k: v for k, v in plain["ratios"].items() if k != "dup_lines"}
+    assert cyc["ratios"]["dup_lines"]["den"] == cyc["totals"]["lines"]
+    assert plain["ratios"]["dup_lines"]["den"] == plain["totals"]["lines"]
     # the two import lines are real source lines, so totals.lines is the only total that moves
     assert {k: v for k, v in cyc["totals"].items() if k != "lines"} == \
         {k: v for k, v in plain["totals"].items() if k != "lines"}
