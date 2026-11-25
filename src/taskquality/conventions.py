@@ -165,7 +165,7 @@ def extract_verdicts(
             line = c.get("first_line", "")
             m = verdict_re.match(line)
             if m:
-                if any(v is None for v in m.groupdict().values()):
+                if any(m.group(g) is None for g in ("role", "model", "verdict", "head")):
                     continue
                 role = m.group("role")
                 if role in config["review_roles"]:
