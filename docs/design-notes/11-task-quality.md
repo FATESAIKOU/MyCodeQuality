@@ -140,7 +140,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 5. 快照不記抓取時刻、帳號、作者名、機器位址。同一個 API 狀態抓兩次得到位元組相同的快照。
 6. 呼叫 `gh` 的部分是可注入的 runner（argv → stdout／exit），測試用錄好的合成回應，不連網。
 
-### 3.3 外部輸入檔（`--input`；MyCostControl 之後會產這個）
+### 3.3 外部輸入檔（`--input`；成本管理模組之後會產這個）
 
 端到端範例用的 input（沒有 `prs`，所以結論從留言讀、返工用推斷）：
 
@@ -516,7 +516,7 @@ taskquality.cli ──> taskquality.fetch ──> gh（subprocess，runner 可�
 
 - **Q1 分數怎麼合成**：任務品質 A 分項＋`clean`（推薦）／B 加權合成分／C 只有 `clean`，見 §4.10。程式碼品質同理：A `counts`＋`ratios`＋`findings`，不給單一分數（推薦）／B 加權成一個 0～1000 的整數。
 - **Q2 審查結論要不要每輪都貼在 PR 上**：抽查 MyCodeQuality 已 merge 的 PR，PR 留言只有最後一輪「可以 merge」；「要修」那一輪只在報告檔。這樣算出的 `review_first_pass` 會偏高，`fix_rounds` 偏低。
-  選項：A 團隊規則改成**每一輪結論都在 PR 留一行**（同格式），程式照現在設計（推薦；最便宜，資料留在 GitHub）；B 不改規則，由 PM 或 MyCostControl 把每輪結論寫進 `--input` 的 `verdicts`；C 接受偏差，輸出照現在設計（`verdicts_source` 已標來源）。
+  選項：A 團隊規則改成**每一輪結論都在 PR 留一行**（同格式），程式照現在設計（推薦；最便宜，資料留在 GitHub）；B 不改規則，由 PM 或成本管理模組把每輪結論寫進 `--input` 的 `verdicts`；C 接受偏差，輸出照現在設計（`verdicts_source` 已標來源）。
 - **Q3 返工 PR 怎麼認**：A 預設推斷（關鍵字＋參照同 ticket 已 merge 的 PR）並可用 input 覆寫（推薦）；B 只認 input 或固定 label（例如 `rework`），不推斷；C 任何在第一個 merge 之後才開的 PR 都算（會把計畫內的後續 PR 算進去，不推薦）。
 - **Q4 週期的起點**：A input `started_at`，沒有就用第一個 PR 的建立時刻（推薦）；B 用 ticket（issue）的建立時刻（常常早於開工很多）；C 只認 input，沒有就 `null`。
 - **Q5 可重用 workflow**：A 只把 `qmetrics repo` 加進現有 `quality.yml` 的 push（推薦；不用新權限），`taskquality` 之後另開單；B 兩個都不做；C 兩個都做，`taskquality` 只支援同 repo 的 ticket（只要 `GITHUB_TOKEN`）。
