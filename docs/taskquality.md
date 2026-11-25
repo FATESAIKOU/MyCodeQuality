@@ -11,7 +11,7 @@
 
 ## 1. 快照格式（Snapshot）
 
-快照（Snapshot）由取得層（`fetch`）抓取 GitHub 資料後產出，作為 `score` 的主要輸入。快照檔不包含抓取時刻、帳號或私人資訊。
+快照（Snapshot）由取得層（`fetch`）抓取 GitHub 資料後產出，作為 `score` 的主要輸入。快照檔不含抓取時刻、帳號；但含 PR 標題／本文／留言第一行，私有 repo 的快照不要 commit 到公開 repo。
 
 ```json
 {
