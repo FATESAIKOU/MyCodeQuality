@@ -2570,3 +2570,57 @@ def test_validation_unhashable_and_type_checks_across_shapes(tmp_path):
     r = run_tq("score", "--snapshot", str(snap_p), "--config", str(p_cfg))
     assert_tool_error(r, "config_bad_shape")
 
+
+def test_extract_verdicts_optional_named_group(tmp_path):
+    """Optional named group in verdict_pattern can be None without dropping verdict (issue #24)."""
+    from taskquality.conventions import extract_verdicts
+
+    cfg = json.loads(run_tq("defaults").stdout)
+    cfg["verdict_pattern"] = (
+        r"^(?P<role>\S*審查)：(?P<model>\S+) 結論：(?P<verdict>[^（]+)"
+        r"（head (?P<head>[0-9a-f]{7,40})）(?P<note> 備註)?"
+    )
+    p_cfg = tmp_path / "config.json"
+    p_cfg.write_text(json.dumps(cfg))
+
+    # 1. Comment without optional note: note is None, but 4 required groups match
+    snap = copy.deepcopy(GOLDEN_SNAPSHOT)
+    snap["prs"][0]["comments"] = [
+        {"id": 1, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：m 結論：可以 merge（head 1111111）"}
+    ]
+    p_snap = tmp_path / "snap.json"
+    p_snap.write_text(json.dumps(snap))
+
+    r1 = run_tq("score", "--snapshot", str(p_snap), "--config", str(p_cfg), "--json")
+    assert r1.returncode == 0, f"Expected 0, got {r1.returncode}, stderr: {r1.stderr}"
+    data1 = json.loads(r1.stdout)
+    assert data1["prs"][0]["verdicts"] == 1
+
+    src1, v1 = extract_verdicts(snap["prs"][0], None, cfg)
+    assert src1 == "comments"
+    assert len(v1) == 1
+    assert v1[0]["verdict"] == "pass"
+    assert v1[0]["role"] == "審查"
+    assert v1[0]["model"] == "m"
+    assert v1[0]["head"] == "1111111"
+
+    # 2. Comment with optional note: note participates in match
+    snap["prs"][0]["comments"] = [
+        {"id": 2, "created_at": "2030-01-02T04:00:00Z", "first_line": "審查：m 結論：可以 merge（head 1111111） 備註"}
+    ]
+    p_snap.write_text(json.dumps(snap))
+
+    r2 = run_tq("score", "--snapshot", str(p_snap), "--config", str(p_cfg), "--json")
+    assert r2.returncode == 0, f"Expected 0, got {r2.returncode}, stderr: {r2.stderr}"
+    data2 = json.loads(r2.stdout)
+    assert data2["prs"][0]["verdicts"] == 1
+
+    src2, v2 = extract_verdicts(snap["prs"][0], None, cfg)
+    assert src2 == "comments"
+    assert len(v2) == 1
+    assert v2[0]["verdict"] == "pass"
+    assert v2[0]["role"] == "審查"
+    assert v2[0]["model"] == "m"
+    assert v2[0]["head"] == "1111111"
+
+
