@@ -87,6 +87,7 @@ def analyze(git, rev, src, tests):
             "dup_windows": 0,
             "smell_events": 0,
             "complex_functions": 0,
+            "dup_lines": 0,
         }
         ratios = {
             "long_files": None,
@@ -94,6 +95,7 @@ def analyze(git, rev, src, tests):
             "deep_functions": None,
             "ast_dup_functions": None,
             "complex_functions": None,
+            "dup_lines": None,
         }
         return {
             "applicable": False,
@@ -113,6 +115,7 @@ def analyze(git, rev, src, tests):
     findings = []
     long_files = 0
     file_windows = {}
+    file_window_lines = {}
     window_files = defaultdict(set)
     shape_groups = defaultdict(list)
     all_funcs = []
@@ -129,7 +132,9 @@ def analyze(git, rev, src, tests):
             long_files += 1
             findings.append({"kind": "long_file", "file": f, "function": None, "value": n_lines})
 
-        wins = metrics.windows(lines)
+        wlines = metrics.window_lines(lines)
+        file_window_lines[f] = wlines
+        wins = set(wlines)
         file_windows[f] = wins
         for w in wins:
             window_files[w].add(f)
@@ -183,6 +188,11 @@ def analyze(git, rev, src, tests):
                 "value": len(shared),
             })
 
+    # dup_lines: distinct (file, line) rows covered by a counted window (a row shared by
+    # several windows counts once; blank and comment rows are never in a window)
+    dup_lines = len({(f, n) for f in src_blobs for w, ns in file_window_lines[f].items()
+                     if w in counted_windows for n in ns})
+
     smell_events = long_files + long_functions + deep_functions + ast_dup_functions + dup_windows
 
     counts = {
@@ -193,6 +203,7 @@ def analyze(git, rev, src, tests):
         "dup_windows": dup_windows,
         "smell_events": smell_events,
         "complex_functions": complex_functions,
+        "dup_lines": dup_lines,
     }
 
     totals = {
@@ -210,6 +221,7 @@ def analyze(git, rev, src, tests):
         "deep_functions": {"num": deep_functions, "den": totals["functions"]} if totals["functions"] > 0 else None,
         "ast_dup_functions": {"num": ast_dup_functions, "den": totals["functions"]} if totals["functions"] > 0 else None,
         "complex_functions": {"num": complex_functions, "den": cog_units} if cog_units > 0 else None,
+        "dup_lines": {"num": dup_lines, "den": totals["lines"]} if totals["lines"] > 0 else None,
     }
 
     arch = imports.analyze(trees, sp)
