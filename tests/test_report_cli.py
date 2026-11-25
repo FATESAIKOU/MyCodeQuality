@@ -413,3 +413,241 @@ def test_c_p11_select_function_is_pure_of_its_inputs():
         gh_artifacts=pages([]),
     )
     assert result == {"tickets": [11, 12], "truncated": [], "skipped_final": [], "skipped_not_completed": []}
+
+
+# --- PR-P3 review fixes (REVIEW-p3) -------------------------------------------------
+
+
+def assert_one_line_error(err, code):
+    assert "Traceback" not in err and err.count("\n") == 1
+    assert f"error {code}" in err
+
+
+def task_report_and_snapshot(tmp_path):
+    report = write_json(tmp_path / "report.json", {"kind": "taskquality-report", "schema_version": 1, "status": "complete", "missing": []})
+    snap = tmp_path / "snap.json"
+    snap.write_bytes(b"{}")
+    return report, str(snap)
+
+
+# M1: the issues event reads only number and stateReason
+
+
+def test_c_p11_issues_event_open_issue_with_null_closed_at(capsys, tmp_path):
+    # the real `gh issue view` shape of an open issue: closedAt is null and must not be parsed
+    rc, out, _ = select_cli(capsys, tmp_path, "issues", issues={"closedAt": None, "number": 37, "stateReason": ""}, artifacts=pages([]))
+    assert rc == 0
+    assert json.loads(out) == {"tickets": [], "truncated": [], "skipped_final": [], "skipped_not_completed": [37]}
+
+
+@pytest.mark.parametrize("state", ["", "REOPENED", "DUPLICATE", "NOT_PLANNED"])
+def test_c_p11_issues_event_only_completed_is_selected(capsys, tmp_path, state):
+    # G1: any state other than COMPLETED must be skipped, not only NOT_PLANNED
+    rc, out, _ = select_cli(capsys, tmp_path, "issues", issues={"closedAt": None, "number": 37, "stateReason": state}, artifacts=pages([]))
+    result = json.loads(out)
+    assert rc == 0 and result["tickets"] == [] and result["skipped_not_completed"] == [37]
+
+
+def test_c_p11_issue_number_out_of_range_exit2(capsys, tmp_path):
+    for number in (0, 10**30):
+        rc, out, err = select_cli(capsys, tmp_path, "issues", issues=issue(number), artifacts=pages([]))
+        assert rc == 2 and out == "" and "bad_shape" in err
+
+
+# M2: bad input is exit 2 with one line and no traceback
+
+
+def test_c_p11_manual_ticket_token_over_nine_digits_exit2(capsys):
+    rc, out, err = run(capsys, "select", "--event", "workflow_dispatch", "--repo", REPO, "--now", NOW, "--tickets", "9" * 5000)
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_ticket")
+
+
+def test_c_p11_manual_nine_digit_ticket_accepted(capsys):
+    rc, out, _ = run(capsys, "select", "--event", "workflow_dispatch", "--repo", REPO, "--now", NOW, "--tickets", "999999999")
+    assert rc == 0 and json.loads(out)["tickets"] == [999999999]
+
+
+@pytest.mark.parametrize("value", ["36501", "999999999", "99999999999", "9" * 30])
+def test_c_p11_backfill_days_too_large_exit2(capsys, tmp_path, value):
+    rc, out, err = select_cli(capsys, tmp_path, "schedule", issues=[issue(11)], artifacts=pages([]), extra=["--backfill-days", value])
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_arguments")
+
+
+def test_c_p11_backfill_window_before_year_one_exit2(capsys, tmp_path):
+    # the last NOW given wins (argparse), so this run uses year 1 and a 36500-day window
+    rc, out, err = select_cli(capsys, tmp_path, "schedule", issues=[issue(11)], artifacts=pages([]), extra=["--now", "0001-01-02T00:00:00Z", "--backfill-days", "36500"])
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_input")
+
+
+def test_c_p11_unexpected_value_error_is_caught_by_main(capsys, monkeypatch):
+    # M2 last line of defence: anything that slips past the explicit checks still exits 2 with one line
+    def boom(_args):
+        raise ValueError("synthetic")
+
+    monkeypatch.setattr("mcqreport.cli._run_select", boom)
+    rc, out, err = run(capsys, "select", "--event", "workflow_dispatch", "--repo", REPO, "--now", NOW, "--tickets", "11")
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_input")
+
+
+def test_c_p11_artifact_name_with_huge_number_is_not_ours(capsys, tmp_path):
+    huge = f"mcq-task--acme.widgets--i{'9' * 5000}--20300102--final--abcdef12"
+    rc, out, _ = select_cli(capsys, tmp_path, "schedule", issues=[issue(11)], artifacts=pages([(huge, False)]))
+    result = json.loads(out)
+    assert rc == 0 and result["tickets"] == [11] and result["skipped_final"] == []
+
+
+@pytest.mark.parametrize("flag", ["--gh-issues", "--gh-artifacts"])
+def test_c_p8_huge_integer_in_select_input_exit2(capsys, tmp_path, flag):
+    big = tmp_path / "big.json"
+    big.write_text('[{"number": ' + "9" * 5000 + ', "closedAt": "2030-01-02T05:00:00Z", "stateReason": "COMPLETED"}]', encoding="utf-8")
+    good_issues = write_json(tmp_path / "issues.json", [issue(11)])
+    good_artifacts = write_json(tmp_path / "artifacts.json", pages([]))
+    argv = ["select", "--event", "schedule", "--repo", REPO, "--now", NOW, "--gh-issues", good_issues, "--gh-artifacts", good_artifacts]
+    argv[argv.index(flag) + 1] = str(big)
+    rc, out, err = run(capsys, *argv)
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_json")
+
+
+def test_c_p8_huge_integer_in_json_file_exit2(capsys, tmp_path, task_files):
+    _, paths = task_files
+    big = tmp_path / "big.json"
+    big.write_text('{"kind": "x", "schema_version": ' + "9" * 5000 + "}", encoding="utf-8")
+    rc, out, err = run(capsys, *index_args([str(big)], tmp_path / "out.json"))
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_json")
+
+
+def test_c_p8_deep_nesting_in_json_file_exit2(capsys, tmp_path, task_files):
+    deep = tmp_path / "deep.json"
+    deep.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+    rc, out, err = run(capsys, *index_args([str(deep)], tmp_path / "out.json"))
+    assert rc == 2
+    assert_one_line_error(err, "bad_json")
+
+
+@pytest.mark.parametrize("value", ["-1", "36501", "99999999999999", "9" * 30])
+def test_c_p9_settle_days_out_of_range_exit2(capsys, tmp_path, value):
+    # L2: name task rejects negative values the same way select's rule does (0..36500)
+    report, snap = task_report_and_snapshot(tmp_path)
+    rc, out, err = run(capsys, "name", "task", "--ticket", "acme/widgets#11", "--closed-at", CLOSED, "--run-at", "2030-01-05T00:00:00Z", "--report", report, "--snapshot", snap, "--settle-days", value)
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "bad_arguments")
+
+
+def test_c_p9_settle_days_bounds_accepted(capsys, tmp_path):
+    report, snap = task_report_and_snapshot(tmp_path)
+    # 0 days settles at once (final); 36500 days cannot settle within the run date (prov)
+    for value, state in (("0", "--final--"), ("36500", "--prov--")):
+        rc, out, _ = run(capsys, "name", "task", "--ticket", "acme/widgets#11", "--closed-at", CLOSED, "--run-at", "2030-01-05T00:00:00Z", "--report", report, "--snapshot", snap, "--settle-days", value)
+        assert rc == 0 and state in out
+
+
+def test_c_p11_select_has_no_settle_days(capsys, tmp_path):
+    # L1: select never used --settle-days, so the flag is gone (final and prov come from name task)
+    rc, out, err = select_cli(capsys, tmp_path, "schedule", issues=[issue(11)], artifacts=pages([]), extra=["--settle-days", "2"])
+    assert rc == 2 and out == "" and "unrecognized arguments" in err
+
+
+# M3: "no red" mutations (G1-G5) each have a test that fails under the mutation
+
+
+def test_c_p11_artifacts_single_page_object_exit2(capsys, tmp_path):
+    # G2: a non---slurp single page object is not the array select expects
+    single = {"total_count": 1, "artifacts": [{"name": final_name(11), "expired": False}]}
+    rc, out, err = select_cli(capsys, tmp_path, "schedule", issues=[issue(11)], artifacts=single)
+    assert rc == 2 and out == "" and "bad_shape" in err
+
+
+def test_c_p9_task_name_lowercases_repo_and_select_finds_it(capsys, tmp_path):
+    # G3: a mixed-case ticket must produce the lowercase name that select matches
+    report, snap = task_report_and_snapshot(tmp_path)
+    rc, out, _ = run(capsys, "name", "task", "--ticket", "Acme/Widgets#11", "--closed-at", CLOSED, "--run-at", "2030-01-05T00:00:00Z", "--report", report, "--snapshot", snap)
+    assert rc == 0 and out.startswith("mcq-task--acme.widgets--i11--20300102--final--")
+    rc, sel, _ = select_cli(capsys, tmp_path, "schedule", issues=[issue(11)], artifacts=pages([(out.strip(), False)]))
+    assert json.loads(sel)["skipped_final"] == [11]
+
+
+def test_c_p9_unreadable_snapshot_exit2(capsys, tmp_path):
+    # G4: a missing file must come out as one unreadable line, not a traceback
+    report, _ = task_report_and_snapshot(tmp_path)
+    rc, out, err = run(capsys, "name", "task", "--ticket", "acme/widgets#11", "--closed-at", CLOSED, "--run-at", "2030-01-05T00:00:00Z", "--report", report, "--snapshot", str(tmp_path / "missing.json"))
+    assert rc == 2 and out == ""
+    assert_one_line_error(err, "unreadable")
+
+
+def test_c_p11_select_stdout_is_one_json_line(capsys, tmp_path):
+    # G5: the workflow reads select's stdout as a single JSON line
+    rc, out, _ = select_cli(capsys, tmp_path, "schedule", issues=[issue(11), issue(12)], artifacts=pages([]))
+    assert rc == 0 and out.count("\n") == 1 and out.endswith("\n")
+    assert json.loads(out)["tickets"] == [11, 12]
+
+
+# L3: index uses the same target rule as name, requires ticket repo == --repo, and checks schema_version
+
+
+@pytest.mark.parametrize("target", ["a/b", "a\nb", ".", ".."])
+def test_c_p8_index_target_same_rules_as_name(capsys, tmp_path, task_files, target):
+    _, paths = task_files
+    out = tmp_path / "code-index.json"
+    args = index_args([paths[0]], out, report="code")
+    args[args.index("--target") + 1] = target
+    rc, stdout, err = run(capsys, *args)
+    assert rc == 2 and not out.exists()
+    assert "bad_name_part" in err
+    assert run(capsys, "name", "code", "--repo", REPO, "--target", target, "--committed-at", "2030-01-02T23:59:59Z", "--rev", REV)[0] == 2
+
+
+def test_c_p8_index_ticket_must_be_in_repo(capsys, tmp_path, task_files):
+    _, paths = task_files
+    out = tmp_path / "index.json"
+    args = index_args(paths, out)
+    args[args.index("--ticket") + 1] = "other/repo#11"
+    rc, _, err = run(capsys, *args)
+    assert rc == 2 and not out.exists() and "bad_arguments" in err
+
+
+def test_c_p8_index_ticket_repo_match_ignores_case(capsys, tmp_path, task_files):
+    _, paths = task_files
+    out = tmp_path / "index.json"
+    args = index_args(paths, out)
+    args[args.index("--ticket") + 1] = "Acme/Widgets#11"
+    assert run(capsys, *args)[0] == 0
+
+
+@pytest.mark.parametrize("bad", [None, [1], "1", True])
+def test_c_p8_schema_version_must_be_integer(capsys, tmp_path, task_files, bad):
+    _, paths = task_files
+    odd = write_json(tmp_path / "odd.json", {"kind": "x", "schema_version": bad})
+    rc, out, err = run(capsys, *index_args([odd], tmp_path / "o.json"))
+    assert rc == 2 and "bad_file" in err
+
+
+def test_c_p8_schema_version_nan_rejected(capsys, tmp_path, task_files):
+    _, paths = task_files
+    nan = tmp_path / "nan.json"
+    nan.write_text('{"kind": "x", "schema_version": NaN}', encoding="utf-8")
+    rc, out, err = run(capsys, *index_args([str(nan)], tmp_path / "o.json"))
+    assert rc == 2 and "bad_file" in err
+
+
+def test_c_p8_render_json_rejects_nan():
+    from mcqreport.common import render_json
+
+    with pytest.raises(ValueError):
+        render_json({"x": float("nan")})
+
+
+# L4: ASCII digits only, and numbers within range
+
+
+def test_c_p11_non_ascii_digits_in_times_rejected(capsys, tmp_path):
+    arabic = "٢٠٣٠-01-09T10:00:00Z"
+    rc, out, err = select_cli(capsys, tmp_path, "schedule", issues=[issue(11, closed_at=arabic)], artifacts=pages([]))
+    assert rc == 2 and out == "" and "bad_time" in err
+    rc, out, err = run(capsys, "select", "--event", "schedule", "--repo", REPO, "--now", arabic, "--gh-issues", write_json(tmp_path / "i.json", []), "--gh-artifacts", write_json(tmp_path / "a.json", pages([])))
+    assert rc == 2 and out == "" and "bad_time" in err

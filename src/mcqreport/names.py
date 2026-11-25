@@ -8,10 +8,10 @@ import datetime
 import hashlib
 import re
 
-from mcqreport.common import ToolError, parse_utc
+from mcqreport.common import ToolError, check_days, parse_utc
 
 REPO_RE = re.compile(r"([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)")
-TICKET_RE = re.compile(r"([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)#([1-9][0-9]*)")
+TICKET_RE = re.compile(r"([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)#([1-9][0-9]{0,8})")
 SAFE_RE = re.compile(r"[A-Za-z0-9._-]+")
 REV_RE = re.compile(r"[0-9a-f]{7,40}")
 
@@ -37,15 +37,16 @@ def split_ticket(ticket) -> tuple[str, str, int]:
     return m.group(1), m.group(2), int(m.group(3))
 
 
-def _check_safe(field: str, value) -> str:
-    if not isinstance(value, str) or not SAFE_RE.fullmatch(value):
-        raise ToolError("bad_name_part", f"{field} may only contain [A-Za-z0-9._-]: {value!r}")
-    return value
+def check_target(target) -> str:
+    """A target is one path-free name part: [A-Za-z0-9._-]+, and not the bare '.' or '..'."""
+    if not isinstance(target, str) or not SAFE_RE.fullmatch(target) or target in (".", ".."):
+        raise ToolError("bad_name_part", f"target may only contain [A-Za-z0-9._-] and is not '.' or '..': {target!r}")
+    return target
 
 
 def code_name(repo, target, committed_at, rev) -> str:
     slug = repo_slug(repo)
-    _check_safe("target", target)
+    check_target(target)
     if not isinstance(rev, str) or not REV_RE.fullmatch(rev):
         raise ToolError("bad_rev", f"rev must be 7-40 lowercase hex characters: {rev!r}")
     day = parse_utc(committed_at, "committed_at").strftime("%Y%m%d")
@@ -62,6 +63,7 @@ def is_final(closed_at: datetime.datetime, run_at: datetime.datetime, status, mi
 def task_name(ticket, closed_at, run_at, status, missing_reasons, snapshot: bytes, settle_days: int) -> str:
     owner, name, number = split_ticket(ticket)
     slug = f"{owner}.{name}".lower()
+    check_days(settle_days, "settle-days", 0)
     closed = parse_utc(closed_at, "closed_at")
     run = parse_utc(run_at, "run_at")
     state = "final" if is_final(closed, run, status, missing_reasons, settle_days) else "prov"

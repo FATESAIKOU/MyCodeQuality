@@ -9,31 +9,32 @@ The gh output shapes are checked here, and so are the places where gh's real out
 import datetime
 import re
 
-from mcqreport.common import ToolError, parse_utc
+from mcqreport.common import ToolError, check_days, parse_utc
 from mcqreport.names import repo_slug, split_repo
 
 LIST_LIMIT = 1000
 MAX_TICKETS_CAP = 256
+MAX_NUMBER = 999_999_999  # issue and artifact numbers; real ones are far smaller
 EVENTS = ("issues", "schedule", "workflow_dispatch")
-TICKET_TOKEN_RE = re.compile(r"[1-9][0-9]*")
-FINAL_REST_RE = re.compile(r"([1-9][0-9]*)--[0-9]{8}--final--[0-9a-f]{8}")
+TICKET_TOKEN_RE = re.compile(r"[1-9][0-9]{0,8}")
+FINAL_REST_RE = re.compile(r"([1-9][0-9]{0,8})--[0-9]{8}--final--[0-9a-f]{8}")
 
 
-def _positive_int(value, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ToolError("bad_arguments", f"{field} must be a positive integer: {value!r}")
-    return value
-
-
-def _parse_issue(item, where: str) -> tuple[int, datetime.datetime, str]:
+def _issue_number_and_state(item, where: str) -> tuple[int, str]:
+    """number and stateReason. closedAt is not read here: it is null on open and reopened issues."""
     if not isinstance(item, dict):
         raise ToolError("bad_shape", f"{where} must be an object")
     number = item.get("number")
-    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
-        raise ToolError("bad_shape", f"{where}.number must be a positive integer")
+    if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= MAX_NUMBER:
+        raise ToolError("bad_shape", f"{where}.number must be a positive integer up to {MAX_NUMBER}")
     state = item.get("stateReason")
     if not isinstance(state, str):
         raise ToolError("bad_shape", f"{where}.stateReason must be a string")
+    return number, state
+
+
+def _parse_issue(item, where: str) -> tuple[int, datetime.datetime, str]:
+    number, state = _issue_number_and_state(item, where)
     closed = parse_utc(item.get("closedAt"), f"{where}.closedAt")
     return number, closed, state
 
@@ -89,17 +90,14 @@ def select_tickets(
     tickets: str | None = None,
     backfill_days: int = 7,
     max_tickets: int = 20,
-    settle_days: int = 2,
 ) -> dict:
     if event not in EVENTS:
         raise ToolError("bad_arguments", f"event must be one of {', '.join(EVENTS)}: {event!r}")
     split_repo(repo)
     now_dt = parse_utc(now, "now")
-    _positive_int(backfill_days, "backfill-days")
+    check_days(backfill_days, "backfill-days", 1)
     if max_tickets < 1 or max_tickets > MAX_TICKETS_CAP:
         raise ToolError("bad_arguments", f"max-tickets must be 1..{MAX_TICKETS_CAP}: {max_tickets!r}")
-    if settle_days < 0:
-        raise ToolError("bad_arguments", f"settle-days must be >= 0: {settle_days!r}")
 
     if event == "workflow_dispatch":
         return _manual(tickets)
@@ -109,7 +107,7 @@ def select_tickets(
     artifacts = _parse_artifacts(gh_artifacts)
 
     if event == "issues":
-        number, closed, state = _parse_issue(gh_issues, "issue")
+        number, state = _issue_number_and_state(gh_issues, "issue")
         if state == "COMPLETED":
             picked, skipped = [number], []
         else:

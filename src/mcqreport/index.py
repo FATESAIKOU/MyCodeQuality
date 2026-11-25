@@ -7,7 +7,7 @@ import hashlib
 import os
 
 from mcqreport.common import ToolError, read_json_bytes
-from mcqreport.names import REV_RE, split_repo, split_ticket
+from mcqreport.names import REV_RE, check_target, repo_slug, split_repo, split_ticket
 
 INDEX_NAME = "index.json"
 
@@ -38,15 +38,16 @@ def build_index(
             raise ToolError("bad_arguments", "code index needs --rev and --target")
         if not REV_RE.fullmatch(rev):
             raise ToolError("bad_rev", f"rev must be 7-40 lowercase hex characters: {rev!r}")
-        if not target:
-            raise ToolError("bad_arguments", "target must not be empty")
+        check_target(target)
         ticket_value, search_value = None, None
     else:
         if rev is not None or target is not None:
             raise ToolError("bad_arguments", "task index takes --ticket and --search-repo, not --rev or --target")
         if ticket is None:
             raise ToolError("bad_arguments", "task index needs --ticket")
-        split_ticket(ticket)
+        ticket_owner, ticket_name, _ = split_ticket(ticket)
+        if repo_slug(f"{ticket_owner}/{ticket_name}") != repo_slug(repo):
+            raise ToolError("bad_arguments", f"ticket {ticket} must be in --repo {repo}")
         for item in search_repos or []:
             split_repo(item)
         ticket_value = ticket
@@ -68,11 +69,14 @@ def build_index(
             raise ToolError("bad_file", f"{name} has no kind")
         if "schema_version" not in parsed:
             raise ToolError("bad_file", f"{name} has no schema_version")
+        schema_version = parsed["schema_version"]
+        if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+            raise ToolError("bad_file", f"{name} schema_version must be an integer")
         files.append(
             {
                 "name": name,
                 "kind": parsed["kind"],
-                "schema_version": parsed["schema_version"],
+                "schema_version": schema_version,
                 "sha256": hashlib.sha256(data).hexdigest(),
             }
         )

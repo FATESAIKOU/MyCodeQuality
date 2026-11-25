@@ -145,7 +145,7 @@ Refs #<N>            ← 只是相關（多 PR 的單、不想自動關單時）
     --out index.json
   ```
 
-  程式碼時改用 `--rev <commit SHA> --target main`，不給 `--ticket` 與 `--search-repo`。`--file` 可重複，檔案必須是帶 `kind` 與 `schema_version` 的 JSON，否則 exit 2。
+  程式碼時改用 `--rev <commit SHA> --target main`，不給 `--ticket` 與 `--search-repo`。`--target` 與名稱的規則相同（只用 `[A-Za-z0-9._-]`，不能是 `.` 或 `..`）。任務的 `--ticket` 必須在 `--repo` 裡。`--file` 可重複，檔案必須是帶 `kind` 與 `schema_version`（整數）的 JSON，否則 exit 2。
 
 - `mcq-report name`：印出 artifact 名稱（一行）。
 
@@ -155,9 +155,18 @@ Refs #<N>            ← 只是相關（多 PR 的單、不想自動關單時）
     --report taskquality-report.json --snapshot taskquality-snapshot.json --settle-days 2
   ```
 
+  `--settle-days` 預設 2，範圍 0～36500；負數或過大的值 exit 2。
+
 - `mcq-report select`：決定任務 workflow 這次要算哪些單，輸出一行 JSON：`{"tickets": [...], "truncated": [...], "skipped_final": [...], "skipped_not_completed": [...]}`。
+  ```bash
+  mcq-report select --event schedule --repo acme/widgets --now 2030-01-09T00:00:00Z --backfill-days 7 \
+    --max-tickets 20 --gh-issues issues.json --gh-artifacts artifacts.json --summary summary.md
+  ```
+  - `--repo`（必填）是呼叫端的 `OWNER/REPO`；`--now`（必填）是 UTC 時刻，由 workflow 給；`--backfill-days`（預設 7，1～36500）是回溯窗口。
   - `--event` 是 `issues`、`schedule`、`workflow_dispatch` 之一。
   - `schedule` 與 `issues` 要給 `--gh-issues`、`--gh-artifacts`（分別是 `gh issue list`、`gh issue view` 與 `gh api --paginate --slurp` 的輸出）。`workflow_dispatch` 給 `--tickets`（空白分隔的單號）。
+  - `issues` 事件只看單的 `number` 與 `stateReason`；`COMPLETED` 才選，其餘（包括重新打開、還沒關閉的單）放進 `skipped_not_completed`，exit 0。
+  - `select` 沒有 `--settle-days`：final／prov 只由 `name task` 判定。這與原設計少一個參數。
   - `--max-tickets`（預設 20，上限 256）之外的單放進 `truncated`，摘要用 `::warning::` 標示，不讓 job 失敗。
   - `gh issue list` 的結果不依 `closedAt` 排序，所以排序在指令裡做。結果剛好 1000 筆時表示可能被截斷，exit 2，請縮小 `--backfill-days`。
   - 摘要寫到 `--summary` 指定的檔案；沒給時寫到 stderr。

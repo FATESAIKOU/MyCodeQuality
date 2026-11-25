@@ -66,7 +66,6 @@ def build_parser() -> argparse.ArgumentParser:
     sl.add_argument("--now", required=True, help="current time, UTC (from the workflow; this command never reads the clock)")
     sl.add_argument("--backfill-days", type=int, default=7)
     sl.add_argument("--max-tickets", type=int, default=20)
-    sl.add_argument("--settle-days", type=int, default=2)
     sl.add_argument("--gh-issues", default=None, help="schedule: gh issue list JSON; issues: gh issue view JSON")
     sl.add_argument("--gh-artifacts", default=None, help="gh api --paginate --slurp artifacts JSON (schedule and issues)")
     sl.add_argument("--tickets", default=None, help="workflow_dispatch: space-separated ticket numbers")
@@ -135,9 +134,8 @@ def _run_select(args) -> int:
         tickets=args.tickets,
         backfill_days=args.backfill_days,
         max_tickets=args.max_tickets,
-        settle_days=args.settle_days,
     )
-    sys.stdout.write(json.dumps(result, sort_keys=True) + "\n")
+    sys.stdout.write(json.dumps(result, sort_keys=True, allow_nan=False) + "\n")
     text = summary_text(args.event, result, args.max_tickets)
     if args.summary:
         with open(args.summary, "w", encoding="utf-8", newline="\n") as fh:
@@ -161,6 +159,10 @@ def main(argv=None) -> int:
         return EXIT_TOOL_ERROR
     except OSError as e:
         sys.stderr.write(f"mcq-report: error unreadable: {_one_line(str(e))}\n")
+        return EXIT_TOOL_ERROR
+    except (ValueError, OverflowError, RecursionError) as e:
+        # Last line of defence for input that slips past the explicit checks: still one line, still exit 2.
+        sys.stderr.write(f"mcq-report: error bad_input: {_one_line(str(e))}\n")
         return EXIT_TOOL_ERROR
 
 
