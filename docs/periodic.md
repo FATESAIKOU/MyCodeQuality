@@ -88,3 +88,78 @@ Refs #<N>            ← 只是相關（多 PR 的單、不想自動關單時）
 ## 3. 不要改內建 config
 
 這些慣例是現行內建 config 的行為。要放寬或改寫其中任何一條，都會改變內建 `config_digest`，讓升版前後的數字不能比較。個別 repo 真的需要不同設定時，用該 repo 的 config 檔，它只影響那個 repo，而且 digest 看得出來。
+
+## 4. 結果檔：artifact 名稱與 `index.json`
+
+定期報告（程式碼與任務）每次跑都會產生一個 artifact。名稱與裡面的 `index.json` 是給使用方讀的介面，格式固定；`mcq-report` 指令負責產生它們。
+
+**artifact 名稱**（只用 `[A-Za-z0-9._-]`；`owner`、`repo` 小寫，`.` 連接）：
+
+| 種類 | 名稱 |
+|---|---|
+| 程式碼 | `mcq-code--<owner>.<repo>--<target>--<YYYYMMDD>--<rev 7 碼>` |
+| 任務 | `mcq-task--<owner>.<repo>--i<N>--<YYYYMMDD>--<final 或 prov>--<快照 sha256 前 8 碼>` |
+
+- 程式碼的日期取該 commit 的 committer date（UTC）；任務的日期取單的 `closedAt`（UTC）。
+- 任務的 `final`：距離 `closedAt` 已經滿 `settle-days` 天，而且報告的 `status` 不是 `in_progress`，`missing` 裡也沒有 `ci_incomplete`。否則是 `prov`。
+- 使用方**只應相信 `index.json` 的 `repo` 與 `ticket`**，名稱只拿來篩選。
+
+**`index.json`**（`kind: mcq-report-index`、`schema_version: 1`）：
+
+```json
+{
+  "files": [
+    {"kind": "taskquality-config", "name": "taskquality-config.json", "schema_version": 1, "sha256": "…"},
+    {"kind": "taskquality-report", "name": "taskquality-report.json", "schema_version": 1, "sha256": "…"},
+    {"kind": "taskquality-snapshot", "name": "taskquality-snapshot.json", "schema_version": 1, "sha256": "…"}
+  ],
+  "kind": "mcq-report-index",
+  "python_version": "3.12",
+  "qmetrics_ref": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "repo": "acme/widgets",
+  "rev": null,
+  "report": "task",
+  "schema_version": 1,
+  "search_repos": ["acme/widgets"],
+  "target": null,
+  "ticket": "acme/widgets#11"
+}
+```
+
+- `report` 是 `code` 或 `task`。程式碼時 `rev`、`target` 有值，`ticket` 與 `search_repos` 是 `null`；任務時相反。
+- `search_repos` 是任務抓取時實際搜尋的 repo（排序後），用來說明 `no_prs` 的範圍。
+- `files` 依 `name` 排序；`kind` 與 `schema_version` 從檔案本身讀出。
+- 不含時刻、run id、觸發事件，所以同樣的檔案得到位元組相同的 `index.json`。
+- 新指標進來時只會多出 `qmetrics-repo.json` 的新欄位，index 格式不變。使用方要用 `tool_version` 判斷有沒有那些欄位；舊版輸出沒有的鍵是「沒量」，不是 0。
+
+## 5. `mcq-report` 子命令
+
+`mcq-report` 只用標準函式庫，不連網，也不讀時鐘；時刻都由參數給。
+
+- `mcq-report index`：寫出 `index.json`。
+
+  ```bash
+  mcq-report index --report task --repo acme/widgets --qmetrics-ref <SHA> --python-version 3.12 \
+    --ticket acme/widgets#11 --search-repo acme/widgets \
+    --file taskquality-snapshot.json --file taskquality-report.json --file taskquality-config.json \
+    --out index.json
+  ```
+
+  程式碼時改用 `--rev <commit SHA> --target main`，不給 `--ticket` 與 `--search-repo`。`--file` 可重複，檔案必須是帶 `kind` 與 `schema_version` 的 JSON，否則 exit 2。
+
+- `mcq-report name`：印出 artifact 名稱（一行）。
+
+  ```bash
+  mcq-report name code --repo acme/widgets --target main --committed-at 2030-01-02T23:59:59Z --rev <commit SHA>
+  mcq-report name task --ticket acme/widgets#11 --closed-at 2030-01-02T05:00:00Z --run-at 2030-01-05T00:00:00Z \
+    --report taskquality-report.json --snapshot taskquality-snapshot.json --settle-days 2
+  ```
+
+- `mcq-report select`：決定任務 workflow 這次要算哪些單，輸出一行 JSON：`{"tickets": [...], "truncated": [...], "skipped_final": [...], "skipped_not_completed": [...]}`。
+  - `--event` 是 `issues`、`schedule`、`workflow_dispatch` 之一。
+  - `schedule` 與 `issues` 要給 `--gh-issues`、`--gh-artifacts`（分別是 `gh issue list`、`gh issue view` 與 `gh api --paginate --slurp` 的輸出）。`workflow_dispatch` 給 `--tickets`（空白分隔的單號）。
+  - `--max-tickets`（預設 20，上限 256）之外的單放進 `truncated`，摘要用 `::warning::` 標示，不讓 job 失敗。
+  - `gh issue list` 的結果不依 `closedAt` 排序，所以排序在指令裡做。結果剛好 1000 筆時表示可能被截斷，exit 2，請縮小 `--backfill-days`。
+  - 摘要寫到 `--summary` 指定的檔案；沒給時寫到 stderr。
+
+工具錯誤（參數錯、JSON 形狀不對、檔案讀不到）一律 exit 2，訊息寫在 stderr。
