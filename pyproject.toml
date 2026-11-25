@@ -12,7 +12,10 @@ taskquality = "taskquality.cli:main"
 mcq-report = "mcqreport.cli:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "pytest",
+    "pyyaml>=6.0.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.14"]

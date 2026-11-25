@@ -19,6 +19,21 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v5
+      - name: Install actionlint (pinned, checksum verified)
+        # Release v1.7.12 of https://github.com/rhysd/actionlint ; the sha256 is the linux_amd64 line of its
+        # actionlint_1.7.12_checksums.txt release asset (checked 2026-11-25). Bump both together.
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -sSfL -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Lint periodic-report workflows
+        run: actionlint .github/workflows/code-quality-report.yml .github/workflows/task-quality-report.yml
       - run: uv run python -I -m pytest -q
 
   quality:
