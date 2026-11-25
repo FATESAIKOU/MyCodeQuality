@@ -73,10 +73,26 @@ Without `--json`, prints a human-readable summary. With `--json`, prints a deter
 - `totals`: `files` (.py count), `lines` (total line count), `functions` (function/method count), `tests` (count of `test_*` functions in `tests`), `cognitive_units` (scoring units: functions not nested in another function) and `cognitive` (sum of their cognitive complexity).
 - `counts`: `long_files` (> 1000 lines), `long_functions` (> 50 lines), `deep_functions` (nesting depth >= 4), `ast_dup_functions` (AST-identical functions >= 5 lines, grouped: size - 1 summed), `dup_windows` (6-line duplicate code windows appearing across >= 2 files), `complex_functions` (cognitive complexity > 15 per scoring unit; not part of `smell_events`), and `smell_events` (sum of the five categories).
 - `ratios`: `{num, den}` ratios for `long_files` (den: `totals.files`), `long_functions`, `deep_functions`, and `ast_dup_functions` (den: `totals.functions`), and `complex_functions` (den: `totals.cognitive_units`, which is not `totals.functions`). If denominator is 0, the ratio is `null`. No floating-point numbers are output.
-- `findings`: detail list for each detected issue (`long_file`, `long_function`, `deep_function`, `ast_dup_function`, `complex_function`, `dup_windows`), sorted deterministically by `(kind, file, function, value)`.
+- `findings`: detail list for each detected issue (`long_file`, `long_function`, `deep_function`, `ast_dup_function`, `complex_function`, `dup_windows`, `import_cycle`: one entry per module in an import cycle, `value` = size of that cycle), sorted deterministically by `(kind, file, function, value)`.
+- `arch`: module import graph under `src` (Python only, stdlib `ast`). `modules`, `edges`, `cycles` (strongly connected components of size >= 2), `modules_in_cycles`, `max_fan_in`, `max_fan_out`, `unresolved_internal_like` and `unresolved_self_prefix` (signs that the import root is wrong; they warn, they do not fix), `shadowed_files` (a `x.py` hidden by `x/__init__.py`), and `packages[]` with Martin's Ca, Ce and instability (`null` when Ca + Ce is 0). Imports inside functions and under `TYPE_CHECKING` count as dependencies; re-exports from a package's `__init__` back into its own children do not. Cycle counts are a trend, not a to-do list. `arch` is `null` when `src` fails to parse, and all zeros with empty `packages` when `src` has no `.py` files.
+
+  Import root limits: module names are relative to the import root.
+  When `--src` is a directory that has an `__init__.py`, names get that directory's name as a prefix
+  (`acme/widgets.py` is `acme.widgets`); with `--src .` there is no prefix.
+  A relative import that climbs above the import root (e.g. `from ...y import z` in a depth-1 package)
+  is not an edge. `from ..y import z` in a depth-1 package resolves to the root-level module `y`;
+  that is a known loose spot, kept on purpose.
+  Known blind spot: a flat import (`import util` in a package under `--src` that has an `__init__.py`)
+  resolves to nothing and silently counts as 0 edges, with no warning.
+  `arch_import_root_suspect` means an unresolved import matches a module under `--src` at a deeper path
+  (`--src` is probably too shallow) or starts with `--src`'s own directory name (the import root is
+  probably its parent); the numbers are not changed, only the warning is set.
+  `arch_module_shadowed` means two files give the same module name (`x.py` and `x/__init__.py`, or
+  `a.b.py` and `a/b.py`); one of them is listed in `shadowed_files` and not analyzed.
+
 - Cognitive complexity is a self-written approximation over Python's `ast` (not SonarQube's numbers: parenthesized boolean sequences, `match` guards, lambdas and recursion are counted differently or not at all). Known limitation (#31): two functions with the same qualified name under different parents (for example `def f` at module level and `def f` inside an `if`) share a key, and the later one replaces the earlier, so that unit is dropped from `cognitive_units`/`cognitive`; `metrics.funcs` behaves the same way.
 - `parse_failures`: files that failed to parse (`{file, scope}`). If any file in `src` fails to parse, `totals.functions`, `totals.cognitive_units`, `totals.cognitive`, `counts`, `ratios`, and `findings` are `null` (fail-closed); if in `tests`, `totals.tests` is `null`.
-- `warnings`: array of preflight check warnings (such as `alternates_present`, `replace_refs_present`).
+- `warnings`: sorted array of codes from the preflight checks (such as `alternates_present`, `replace_refs_present`) and from `arch` (`arch_import_root_suspect`, `arch_module_shadowed`).
 
 ## Limits
 

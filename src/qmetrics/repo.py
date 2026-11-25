@@ -1,7 +1,7 @@
 """Repository-wide static code quality metrics at a single commit."""
 
 from collections import defaultdict
-from qmetrics import cognitive, metrics
+from qmetrics import cognitive, imports, metrics
 
 COMPLEX_THRESHOLD = 15  # a scoring unit above this cognitive complexity is a complex function
 
@@ -65,7 +65,9 @@ def analyze(git, rev, src, tests):
             "counts": None,
             "ratios": None,
             "findings": None,
+            "arch": None,
             "parse_failures": parse_failures,
+            "warnings": [],
         }
 
     if not applicable:
@@ -99,7 +101,13 @@ def analyze(git, rev, src, tests):
             "counts": counts,
             "ratios": ratios,
             "findings": [],
+            "arch": {
+                "modules": 0, "edges": 0, "cycles": 0, "modules_in_cycles": 0,
+                "max_fan_in": 0, "max_fan_out": 0, "unresolved_internal_like": 0,
+                "unresolved_self_prefix": 0, "shadowed_files": [], "packages": [],
+            },
             "parse_failures": parse_failures,
+            "warnings": [],
         }
 
     findings = []
@@ -111,6 +119,7 @@ def analyze(git, rev, src, tests):
     cog_units = 0
     cog_total = 0
     complex_functions = 0
+    trees = {}
 
     for f in sorted(src_blobs):
         text = text_of(src_blobs[f])
@@ -126,6 +135,7 @@ def analyze(git, rev, src, tests):
             window_files[w].add(f)
 
         tree, _ = tree_of(src_blobs[f])
+        trees[f] = tree
         fn_dict = metrics.funcs(tree)
         for (qname, k), (start, end, d, sh) in sorted(fn_dict.items()):
             fn_len = end - start + 1
@@ -202,6 +212,8 @@ def analyze(git, rev, src, tests):
         "complex_functions": {"num": complex_functions, "den": cog_units} if cog_units > 0 else None,
     }
 
+    arch = imports.analyze(trees, sp)
+    findings += arch["findings"]
     findings.sort(key=lambda x: (x["kind"], x["file"], x["function"] or "", x["value"]))
 
     return {
@@ -210,5 +222,7 @@ def analyze(git, rev, src, tests):
         "counts": counts,
         "ratios": ratios,
         "findings": findings,
+        "arch": arch["arch"],
         "parse_failures": parse_failures,
+        "warnings": arch["warnings"],
     }

@@ -64,7 +64,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 - 陣列的排序在各欄位寫明；物件靠 `sort_keys`。
 - PR 識別一律 `owner/repo#number`；排序時依 (owner/repo 字串, number 數字)。
 - 每個檔都有 `kind` 與 `schema_version`；讀到不認得的 `kind` 或版本是工具錯誤。未知欄位：輸入檔忽略（前向相容），輸出不加。
-- `warnings`（兩種輸出都有）：本設計沒有任何情況會產生，固定是空陣列；保留給之後只加不改的提示。
+- `warnings`（兩種輸出都有）：taskquality 的輸出固定是空陣列。`qmetrics repo --json` 的 `warnings` 是 preflight 的代碼（`alternates_present`、`replace_refs_present`）與 `arch` 的代碼（`arch_import_root_suspect`、`arch_module_shadowed`）合併、去重、排序後的結果；只有代碼，細節看 §3.4 的 `arch`。
 - 缺值：**鍵不存在**＝沒提供；**值是 `null`**＝提供了但未知。兩者在輸出都是 `null`，`missing[].reason` 分別是 `input_missing`／`input_null`。不補 0。
 
 ### 3.1 快照（`fetch` 的輸出、`score` 的輸入）
@@ -207,10 +207,21 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
     {"kind": "dup_windows", "file": "src/pkg/c.py", "function": null, "value": 3},
     {"kind": "long_function", "file": "src/pkg/a.py", "function": "Parser.run", "value": 63}
   ],
+  "arch": {
+    "modules": 6, "edges": 7, "cycles": 1, "modules_in_cycles": 2,
+    "max_fan_in": 3, "max_fan_out": 4, "unresolved_internal_like": 0, "unresolved_self_prefix": 0,
+    "shadowed_files": [],
+    "packages": [
+      {"package": "acme.widgets", "modules": 4, "ca": 0, "ce": 1, "instability": {"num": 1, "den": 1}},
+      {"package": "acme.widgets.io", "modules": 2, "ca": 1, "ce": 0, "instability": {"num": 0, "den": 1}}
+    ]
+  },
   "parse_failures": [],
   "warnings": []
 }
 ```
+
+上面 `arch` 的數字只示範形狀，與檔案清單無關。
 
 定義（`src` 底下的 `.py` 檔，取法與 `metrics.list_tree` 相同：跳過 symlink 與 submodule；函式取法與 `metrics.funcs` 相同，含方法與巢狀函式）：
 
@@ -235,7 +246,8 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `ratios.deep_functions` | den＝`totals.functions` |
 | `ratios.ast_dup_functions` | den＝`totals.functions` |
 | `ratios.complex_functions` | den＝`totals.cognitive_units`。**不是** `totals.functions`：巢狀函式不是計分單位，所以這一項不能和上面三項直接比 |
-| `findings` | 每個被計到的項目一筆：`long_file`（value＝行數，`function` 是 `null`）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`complex_function`（認知複雜度，value＝該計分單位的值，`function` 是 qualname）、`dup_windows`（每個至少含一個被計到的視窗的檔各一筆，value＝該檔含有的被計到的相異視窗數，`function` 是 `null`）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
+| `arch` | 模組相依（§4.2 的 M2，`src/qmetrics/imports.py`）。`modules`：模組數；`edges`：去重後的模組間邊數（篩選後，見下）；`cycles`：大小 ≥ 2 的強連通分量數（Tarjan，迭代版）；`modules_in_cycles`：這些分量的模組數加總；`max_fan_in`／`max_fan_out`：模組層入邊數／出邊數的最大值；`unresolved_internal_like`、`unresolved_self_prefix`：§4.2 第 2 點的兩個訊號，每個別名最多計一次；`shadowed_files`：被同名 package 遮住的檔（`x.py` 與 `x/__init__.py` 並存時是 `x.py`），依路徑排序；`packages[]`：依 `package` 排序，每個 package 的 `modules`、`ca`、`ce`、`instability`（`{num: ce, den: ca+ce}`，den＝0 時 `null`）。模組名相對於 import 根算（`--src` 有 `__init__.py` 時前綴是 `--src` 的目錄名）。**篩選（Q-M2）**：函式內 import 與 `TYPE_CHECKING` 底下的 import 都算邊；`__init__` 重新匯出造成的 package↔子模組邊（X→P，P 是 `__init__` 模組、X 的名稱以 `P.` 開頭）不算邊。篩選後的同一組邊用於 `edges`、循環、fan 與 Ca／Ce。循環數是趨勢，不是問題清單：有型別標註的專案幾乎不會是 0。**import 根的限制**：`--src` 有 `__init__.py` 時前綴是目錄名（`--src .` 沒有前綴）；超出 import 根的相對 import（例如深度 1 的 package 裡的 `from ...y import z`）不算邊；`from ..y import z` 在深度 1 的 package 裡連到 root 層的模組 `y`（已知的寬鬆行為，刻意保留）。已知盲點：扁平 import（`--src` 底下有 `__init__.py` 的 package 裡寫 `import util`）解析不到，靜默算 0 邊、不發警告。`arch_import_root_suspect`：有無法解析的 import 對得上 `--src` 底下更深一層的模組（`--src` 可能太淺），或以 `--src` 目錄名開頭（import 根可能是它的上一層）；只發警告，數字不變。`arch_module_shadowed`：兩個檔給出同一個模組名（`x.py` 與 `x/__init__.py`，或 `a.b.py` 與 `a/b.py`），其中一個列在 `shadowed_files`、不分析。 |
+| `findings` | 每個被計到的項目一筆：`import_cycle`（在循環裡的每個模組一筆，value＝該循環的模組數，`function` 是 `null`）、`long_file`（value＝行數，`function` 是 `null`）、`long_function`（長度）、`deep_function`（深度）、`ast_dup_function`（同組大小；組內每個函式都列）、`complex_function`（認知複雜度，value＝該計分單位的值，`function` 是 qualname）、`dup_windows`（每個至少含一個被計到的視窗的檔各一筆，value＝該檔含有的被計到的相異視窗數，`function` 是 `null`）；依 (`kind`, `file`, `function` 或 "", `value`) 排序 |
 | `applicable` | `src` 下有任何 `.py` |
 
 範例裡：`deep_functions` 1 筆、`long_functions` 1 筆（同一個函式兩項都中，各記一次）；`b.py` 與 `c.py` 共有 3 個相異 6 行視窗，所以 `dup_windows` 是 3，兩檔各一筆 value 3；`smell_events`＝0＋1＋1＋0＋3＝5。
@@ -244,7 +256,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 認知複雜度（`totals.cognitive_units`、`totals.cognitive`、`counts.complex_functions`、`ratios.complex_functions`、`complex_function` 的 findings）是自寫、只用 `ast` 的近似，規則表在 `src/qmetrics/cognitive.py` 的模組 docstring 裡（R1–R18 的編號與說明都在那裡）。它不等於 SonarQube 的數字：括號內的布林運算序列、`match` 的 case guard、lambda 與遞迴的計法與 SonarQube 不同或未計。已知差異：同名（同 qualname）的函式若分別放在不同父節點下（例如 `def f` 與 `if X:` 裡的 `def f`），鍵會碰撞，後者覆蓋前者，前者的單位被丟掉（與 `metrics.funcs` 相同；見 #31）。門檻 15 是 `> 15` 才算，放在 `src/qmetrics/repo.py`。
 
-缺值：`src` 下任一檔解析失敗 → `totals.functions`、`totals.cognitive_units`、`totals.cognitive`、`counts`、`ratios`、`findings` 都是 `null`（沿用 diff 的 fail-closed；`files`、`lines` 不用解析，照算）。`tests` 下任一檔解析失敗 → `totals.tests` 是 `null`。失敗的檔列在 `parse_failures`（`{file, scope}`，依 (`file`, `scope`) 排序）。
+缺值：`src` 下任一檔解析失敗 → `totals.functions`、`totals.cognitive_units`、`totals.cognitive`、`counts`、`ratios`、`findings`、`arch` 都是 `null`（沿用 diff 的 fail-closed；`files`、`lines` 不用解析，照算）。`tests` 下任一檔解析失敗 → `totals.tests` 是 `null`。失敗的檔列在 `parse_failures`（`{file, scope}`，依 (`file`, `scope`) 排序）。
 
 不輸出加權分數：要看「好不好」看 `ratios`，要看「哪裡」看 `findings`（§8 Q1 也適用於這裡）。
 
