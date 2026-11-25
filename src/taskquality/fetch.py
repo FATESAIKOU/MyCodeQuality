@@ -17,6 +17,38 @@ from taskquality.formats import (
     validate_snapshot,
 )
 
+# Ticket label events (§4.1). Own query so it costs one more paginated request per ticket.
+# Only the label name and time are requested: no actor, so no operator is stored.
+GRAPHQL_LABEL_QUERY = """query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      timelineItems(first: 100, after: $cursor, itemTypes: [LABELED_EVENT, UNLABELED_EVENT]) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          __typename
+          ... on LabeledEvent {
+            createdAt
+            label {
+              name
+            }
+          }
+          ... on UnlabeledEvent {
+            createdAt
+            label {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}"""
+
+LABEL_EVENT_ACTIONS = {"LabeledEvent": "labeled", "UnlabeledEvent": "unlabeled"}
+
 GRAPHQL_TIMELINE_QUERY = """query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
@@ -239,6 +271,83 @@ def parse_single_json(raw: str, err_code: str = "gh_failed") -> dict:
     if not isinstance(obj, dict):
         raise ToolError(err_code, "expected JSON object")
     return obj
+
+
+def fetch_ticket_labels(
+    ticket_owner: str,
+    ticket_repo: str,
+    ticket_num: int,
+    runner: Callable[[list[str]], Any],
+    sleeper: Callable[[float], None],
+    time_func: Callable[[], float],
+) -> list[dict[str, str]]:
+    """Collect LabeledEvent/UnlabeledEvent for the ticket, sorted by (at, action, label)."""
+    events: list[dict[str, str]] = []
+    cursor = None
+    page = 1
+    while True:
+        argv = [
+            "gh",
+            "api",
+            "graphql",
+            "-f",
+            f"query={GRAPHQL_LABEL_QUERY}",
+            "-F",
+            f"owner={ticket_owner}",
+            "-F",
+            f"name={ticket_repo}",
+            "-F",
+            f"number={ticket_num}",
+        ]
+        if cursor:
+            argv.extend(["-F", f"cursor={cursor}"])
+
+        stdout, stderr, code = execute_with_retry(argv, runner, sleeper, time_func)
+        if code != 0:
+            if page == 1:
+                raise ToolError("gh_failed", f"GraphQL label query failed: {stderr.strip()}")
+            raise ToolError("incomplete_pagination", f"GraphQL label pagination failed on page {page}: {stderr.strip()}")
+
+        try:
+            data = json.loads(strip_http_headers(stdout).strip())
+        except json.JSONDecodeError as e:
+            if page > 1:
+                raise ToolError("incomplete_pagination", f"invalid JSON on label page {page}: {e}") from e
+            raise ToolError("gh_failed", f"invalid JSON from GraphQL label query: {e}") from e
+
+        if isinstance(data, dict) and data.get("errors"):
+            err_msgs = " ".join(str(e.get("message", "")) for e in data["errors"] if isinstance(e, dict))
+            if page > 1:
+                raise ToolError("incomplete_pagination", f"GraphQL error on label page {page}: {err_msgs}")
+            raise ToolError("gh_failed", f"GraphQL label query error: {err_msgs}")
+
+        repo_obj = (data.get("data") or {}).get("repository")
+        issue_obj = repo_obj.get("issue") if isinstance(repo_obj, dict) else None
+        if not isinstance(issue_obj, dict):
+            raise ToolError("not_found", f"issue not found: {ticket_owner}/{ticket_repo}#{ticket_num}")
+
+        timeline = issue_obj.get("timelineItems") or {}
+        for node in timeline.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            action = LABEL_EVENT_ACTIONS.get(node.get("__typename"))
+            label = node.get("label")
+            name = label.get("name") if isinstance(label, dict) else None
+            at = node.get("createdAt")
+            if action is None or not isinstance(name, str) or not name or not isinstance(at, str):
+                continue
+            events.append({"at": at, "action": action, "label": name})
+
+        page_info = timeline.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
+        if not cursor:
+            break
+        page += 1
+
+    events.sort(key=lambda ev: (ev["at"], ev["action"], ev["label"]))
+    return events
 
 
 def fetch_snapshot(
@@ -572,10 +681,15 @@ def fetch_snapshot(
             "ci_runs": ci_runs,
         })
 
+    ticket_labels = fetch_ticket_labels(
+        ticket_owner, ticket_repo, ticket_num, actual_runner, actual_sleeper, actual_time
+    )
+
     snapshot = {
         "kind": "taskquality-snapshot",
         "schema_version": 1,
         "ticket": ticket,
+        "ticket_labels": ticket_labels,
         "prs": prs,
     }
 

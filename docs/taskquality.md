@@ -18,6 +18,9 @@
   "kind": "taskquality-snapshot",
   "schema_version": 1,
   "ticket": "acme/widgets#11",
+  "ticket_labels": [
+    {"at": "2030-01-02T02:00:00Z", "action": "labeled", "label": "status:in-progress"}
+  ],
   "prs": [
     {
       "id": "acme/widgets#21",
@@ -50,6 +53,10 @@
 - `kind`: 固定為 `"taskquality-snapshot"`。
 - `schema_version`: 目前為 `1`。
 - `ticket`: 工單識別，格式為 `owner/repo#number`。
+- `ticket_labels`（選填；`fetch` 一律輸出，沒有事件時為 `[]`）: 工單的標籤加上／移除事件，每筆為 `{"at", "action", "label"}`。
+  - `action`: `"labeled"` 或 `"unlabeled"`。
+  - 依 (`at`, `action`, `label`) 排序；**不含操作者**。
+  - 沒有這個鍵的舊快照照常計算（`score` 的輸出不變）。
 - `prs`: 陣列，依 PR 識別 `(owner/repo, number)` 排序。
   - `id`: PR 識別，格式為 `owner/repo#number`。
   - `title`, `body`: PR 標題與內文。
@@ -105,7 +112,7 @@
 - `kind`: 固定為 `"taskquality-input"`。
 - `schema_version`: 目前為 `1`。
 - `ticket`: 必須與快照的 `ticket` 完全一致，否則視為 `ticket_mismatch` 工具錯誤。
-- `started_at`（選填）: 開工時刻（UTC）。未提供時週期計算改採最早建立的 PR `created_at`。
+- `started_at`（選填）: 開工時刻（UTC）。未提供時，若 config 有 `started_label`（config v2）且快照有該標籤的 `labeled` 事件，改採該標籤最早一次的時刻（`cycle_basis: "ticket_label"`）；再沒有，才採最早建立的 PR `created_at`。
 - `usage`（選填）: Token 與成本記錄陣列。各 token 與 `cost_micro_usd` 均為非負整數（避免浮點數；費用單位為微美元 micro-USD，即百萬分之一美元）。
 - `counters`（選填）: 名稱與非負整數的對應物件，原樣輸出至報告。
 - `prs.<id>.verdicts`（選填）: 覆寫特定 PR 的審查結論序列。若存在（包含空陣列），該 PR 的 `verdicts_source` 記為 `"input"`；若給定 `null`，則該 PR 審查各項輸出為 `null`，原因為 `input_null`。
@@ -134,8 +141,21 @@
 }
 ```
 
+### config v2（`schema_version: 2`）
+
+新增兩個選填鍵；只有用了新鍵的 config 才需要寫成 v2。
+
+- `started_label`（字串，非空）: 開工標籤。沒有 `input.started_at` 時，取快照中該標籤**最早一次** `labeled` 的時刻，報告的 `cycle_basis` 為 `"ticket_label"`。快照沒有 `ticket_labels`，或找不到該標籤，就往下採 PR `created_at`（`"first_pr_created"`）。標籤常在開單後幾秒內加上，所以它是近似的開工時刻。
+- `ci_required`（布林，預設 `true`）: `false` 時 `clean` 不看「每個合併的 PR 都要有 CI run」這一條。沒有 CI run 的合併 PR 仍計入 `prs_without_ci`，`ci_first_green` 仍為 `null`（`no_ci_runs`）；CI 失敗仍使 `clean` 為 `false`；CI 還沒跑完（`ci_incomplete`）仍使 `clean` 為 `null`。
+- 版本規則：
+  - `schema_version` 接受 `1` 與 `2`。
+  - v2 必須有 v1 的所有必填鍵。
+  - **v1 config 出現 `ci_required` 或 `started_label` 是 `config_bad_shape`（exit 2）。** 這是刻意收緊：v1 過去會靜靜忽略未知鍵，現在帶新鍵的 v1 檔直接報錯，避免版本不一致時算出不同的 `clean`。其他未知鍵仍被忽略。
+  - 錯誤訊息的版本文字改為 `schema_version=1 or 2`。
+- `cycle_basis` 的值現在可能是：`"input_started_at"`、`"ticket_label"`、`"first_pr_created"`，或 `null`。
+
 ### 雜湊計算（`config_digest`）
-- 針對 12 個既定認得的鍵，依 `json.dumps(filtered, sort_keys=True, separators=(",", ":"), ensure_ascii=True)` 序列化後計算 SHA-256。
+- 針對 14 個既定認得的鍵（含 `ci_required`、`started_label`，只有存在時才雜湊），依 `json.dumps(filtered, sort_keys=True, separators=(",", ":"), ensure_ascii=True)` 序列化後計算 SHA-256。
 - 輸出格式為 `"sha256:" + 64碼小寫十六進位`。
 
 ---

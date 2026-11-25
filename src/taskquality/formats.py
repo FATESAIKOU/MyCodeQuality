@@ -8,6 +8,7 @@ from pathlib import Path
 
 RECOGNIZED_CONFIG_KEYS = frozenset([
     "ci_green_conclusions",
+    "ci_required",
     "ci_workflows",
     "fail_verdicts",
     "github_review_role",
@@ -16,10 +17,16 @@ RECOGNIZED_CONFIG_KEYS = frozenset([
     "review_roles",
     "rework_keywords",
     "schema_version",
+    "started_label",
     "ticket_ref_keywords",
     "verdict_pattern",
     "verdict_sources",
 ])
+
+# config v2 adds these keys; a v1 config that contains one is config_bad_shape (§6).
+V2_ONLY_CONFIG_KEYS = ("ci_required", "started_label")
+CONFIG_SCHEMA_VERSIONS = (1, 2)
+TICKET_LABEL_ACTIONS = frozenset(["labeled", "unlabeled"])
 
 ISO_UTC_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z\Z")
 PR_ID_RE = re.compile(r"^([^#]+)#(\d+)\Z")
@@ -89,6 +96,21 @@ def read_json_file(path: str | Path, kind_name: str) -> dict:
     return data
 
 
+def validate_ticket_labels(events) -> None:
+    """Validate the snapshot's ticket_labels list: {at, action, label} per event, no actor."""
+    if not isinstance(events, list):
+        raise ToolError("snapshot_bad_shape", "snapshot ticket_labels must be a list")
+    for ev in events:
+        if not isinstance(ev, dict):
+            raise ToolError("snapshot_bad_shape", "ticket_labels item must be an object")
+        parse_iso_utc(ev.get("at"))
+        if ev.get("action") not in TICKET_LABEL_ACTIONS:
+            raise ToolError("snapshot_bad_shape", f"ticket_labels action must be 'labeled' or 'unlabeled': {ev.get('action')!r}")
+        label = ev.get("label")
+        if not isinstance(label, str) or not label:
+            raise ToolError("snapshot_bad_shape", "ticket_labels label must be a non-empty string")
+
+
 def validate_snapshot(snap: dict) -> None:
     """Validate snapshot structure."""
     if not isinstance(snap, dict):
@@ -101,6 +123,10 @@ def validate_snapshot(snap: dict) -> None:
     prs = snap.get("prs")
     if not isinstance(prs, list):
         raise ToolError("snapshot_bad_shape", "snapshot prs must be a list")
+
+    # Optional (snapshots from before config v2 have no key). Only the ticket's own label events.
+    if "ticket_labels" in snap:
+        validate_ticket_labels(snap["ticket_labels"])
 
     for pr in prs:
         if not isinstance(pr, dict):
@@ -268,8 +294,13 @@ def validate_config(cfg: dict) -> None:
     """Validate config structure and compile regex."""
     if not isinstance(cfg, dict):
         raise ToolError("config_bad_shape", "config must be a JSON object")
-    if cfg.get("kind") != "taskquality-config" or cfg.get("schema_version") != 1:
-        raise ToolError("config_bad_shape", "config must have kind='taskquality-config' and schema_version=1")
+    if cfg.get("kind") != "taskquality-config" or cfg.get("schema_version") not in CONFIG_SCHEMA_VERSIONS:
+        raise ToolError("config_bad_shape", "config must have kind='taskquality-config' and schema_version=1 or 2")
+    version = cfg["schema_version"]
+    if version == 1:
+        for k in V2_ONLY_CONFIG_KEYS:
+            if k in cfg:
+                raise ToolError("config_bad_shape", f"config key {k} requires schema_version=2")
 
     required_keys = [
         "ticket_ref_keywords",
@@ -308,6 +339,13 @@ def validate_config(cfg: dict) -> None:
     if ci_wf is not None:
         if not isinstance(ci_wf, list) or not all(isinstance(x, str) for x in ci_wf):
             raise ToolError("config_bad_shape", "config ci_workflows must be null or a list of strings")
+
+    if "ci_required" in cfg and not isinstance(cfg["ci_required"], bool):
+        raise ToolError("config_bad_shape", "config ci_required must be a boolean")
+    if "started_label" in cfg:
+        started = cfg["started_label"]
+        if not isinstance(started, str) or not started:
+            raise ToolError("config_bad_shape", "config started_label must be a non-empty string")
 
     sources = cfg.get("verdict_sources")
     if not isinstance(sources, list) or len(sources) == 0:

@@ -25,6 +25,10 @@ jobs:
 
 The workflow checks out the full history (`fetch-depth: 0`; a shallow clone is a tool error), runs `qmetrics diff`, writes a summary to the job summary and uploads `qmetrics.json`. It only reports: metric values never fail the job. It fails on tool errors (qmetrics exits non-zero) and infrastructure errors (checkout, pip install, file redirection, step summary, artifact upload). Python projects only for now.
 
+## Task quality (`taskquality`)
+
+`taskquality fetch` writes a ticket snapshot (including `ticket_labels`, the ticket's labeled/unlabeled events, no actors); `taskquality score` turns it into metrics. Config v2 adds two optional keys: `started_label` (start the cycle at the first `labeled` event of that label) and `ci_required` (`false` stops requiring CI for `clean`). A config with `schema_version: 1` that contains either key is rejected with `config_bad_shape`, by design. Details: [docs/taskquality.md](docs/taskquality.md).
+
 ## Optional gate (Q1)
 
 By default the workflow only reports. Set `fail-on: q1` to also fail **pull_request** runs (pushes stay report-only) when either of two events, whose baseline is 0, appears:
