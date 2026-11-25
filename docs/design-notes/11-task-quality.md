@@ -380,10 +380,12 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 - 每 PR：取 `run_attempt == 1` 且 workflow 在 `ci_workflows` 內的 run；其中依 §3.1 `ci_runs` 的排序鍵 (`created_at`, `run_id`, `run_attempt`) 排在第一的那個 run 的 `head_sha` 是 `ci_first_head`（同一秒有多個時取 `run_id` 小的，結果不看快照裡的陣列順序）。看 `ci_first_head` 上所有 attempt 1 的 run：全部 `completed` 且 `conclusion` ∈ `ci_green_conclusions` → true；有任一 completed 但不在清單 → false；否則（還有沒跑完的）→ `null`（`ci_incomplete`）。沒有任何 run → `null`（`no_ci_runs`），計入 `prs_without_ci`。重跑（attempt ≥ 2）不算首次。
 - ticket：`{num: true 的 merged PR 數, den: true 或 false 的 merged PR 數}`；任一 merged PR 是 `ci_incomplete` → 整個 `null`（`ci_incomplete`）；den＝0 → `null`（沒有 merged PR 時 `no_merged_pr`，否則 `no_ci_runs`）。
+- config v2 的 `ci_required: false` 只影響 `clean`：沒有 CI run 的合併 PR 仍計入 `prs_without_ci`、本項仍為 `null`（`no_ci_runs`），但不讓 `clean` 不成立（見 §4.10 條件 2）；CI 失敗與 `ci_incomplete` 的規則不變。
 
 ### 4.7 開工到合併時間 `cycle_seconds`
 
-- 起點：input `started_at`（`cycle_basis: "input_started_at"`）；沒有就用屬於 ticket 的 PR 中最早的 `created_at`（`"first_pr_created"`）；兩者都沒有（沒有 PR 也沒有 `started_at`）時 `cycle_basis` 是 `null`。
+- 起點，依序採用第一個有值的：input `started_at`（`cycle_basis: "input_started_at"`）；config v2 的 `started_label` 在快照 `ticket_labels` 中第一次 `labeled` 的時刻（`"ticket_label"`；只取 `labeled` 事件，`unlabeled` 不算）；屬於 ticket 的 PR 中最早的 `created_at`（`"first_pr_created"`）。都沒有（沒有 PR 也沒有 `started_at`）時 `cycle_basis` 是 `null`。
+- 快照沒有 `ticket_labels`、config 沒有 `started_label`、或該標籤沒有任何 `labeled` 事件，就跳過 `ticket_label` 那一步。
 - 終點：merged PR 中最晚的 `merged_at`。
 - 有 `open` 的 PR → `null`（`pr_open`；有 open 時優先用這個 reason）；否則沒有 merged PR → `null`（`no_merged_pr`）。終點早於起點 → `null`（`bad_interval`）。
 - 值＝終點 − 起點，整數秒。

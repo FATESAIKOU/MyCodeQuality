@@ -23,10 +23,21 @@ TOKEN_KEYS = [
 ]
 
 
+def first_labeled_at(snapshot: dict, label: str) -> str | None:
+    """Earliest 'labeled' event time for label in the snapshot, or None if absent (§4.1)."""
+    times = [
+        ev["at"]
+        for ev in snapshot.get("ticket_labels", [])
+        if ev["label"] == label and ev["action"] == "labeled"
+    ]
+    return min(times) if times else None
+
+
 def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     """Score a ticket snapshot against input and config according to §4."""
     ticket = snapshot["ticket"]
     config_digest = calculate_config_digest(config)
+    ci_required = config.get("ci_required", True)
 
     # 1. Ticket PRs vs Excluded PRs
     ticket_prs_raw = []
@@ -289,9 +300,14 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         rework_prs = sum(1 for p in pr_results if p["rework"] is True)
 
     # cycle_seconds & cycle_basis
+    started_label = config.get("started_label")
+    label_started_at = first_labeled_at(snapshot, started_label) if started_label else None
     if input_data and input_data.get("started_at"):
         cycle_basis = "input_started_at"
         start_ts = input_data["started_at"]
+    elif label_started_at is not None:
+        cycle_basis = "ticket_label"
+        start_ts = label_started_at
     elif ticket_prs_raw:
         cycle_basis = "first_pr_created"
         start_ts = min(p["created_at"] for p in ticket_prs_raw)
@@ -350,7 +366,8 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     else:
         # Conditions 1-7: True, False, or (None, reasons_set)
         c1 = (unreviewed_merged_prs == 0)
-        c2 = (prs_without_ci == 0)
+        # ci_required false: condition 2 does not apply (§6).
+        c2 = (prs_without_ci == 0) if ci_required else True
 
         if review_first_pass is None:
             # den == 0 means unreviewed_merged_prs > 0 (handled by c1)
@@ -369,7 +386,11 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
             c5 = (approved_head_stale == 0)
 
         if ci_first_green is None:
-            c6 = False if c2 is False else (None, metric_missing.get("ci_first_green", set()))
+            if not ci_required and metric_missing.get("ci_first_green") == {"no_ci_runs"}:
+                # No CI run on any merged PR and CI is not required: nothing to fail.
+                c6 = True
+            else:
+                c6 = False if c2 is False else (None, metric_missing.get("ci_first_green", set()))
         else:
             c6 = (ci_first_green["num"] == ci_first_green["den"])
 
