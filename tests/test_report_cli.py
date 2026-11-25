@@ -662,3 +662,28 @@ def test_c_p11_non_ascii_digits_in_times_rejected(capsys, tmp_path):
     assert rc == 2 and out == "" and "bad_time" in err
     rc, out, err = run(capsys, "select", "--event", "schedule", "--repo", REPO, "--now", arabic, "--gh-issues", write_json(tmp_path / "i.json", []), "--gh-artifacts", write_json(tmp_path / "a.json", pages([])))
     assert rc == 2 and out == "" and "bad_time" in err
+
+
+# --- C-P13 new metrics do not reshape index.json -----------------------------------
+
+
+def test_c_p13_new_metric_keys_leave_index_shape_alone(capsys, tmp_path):
+    (tmp_path / "old").mkdir()
+    (tmp_path / "new").mkdir()
+    old = write_json(tmp_path / "old" / "qmetrics-repo.json", {"kind": "qmetrics-repo", "schema_version": 1, "tool_version": "0.3.0"})
+    new = write_json(
+        tmp_path / "new" / "qmetrics-repo.json",
+        {"kind": "qmetrics-repo", "schema_version": 1, "tool_version": "0.4.0", "arch": {"modules": 3}, "totals": {"cognitive": 7}},
+    )
+    indexes = []
+    for label, path in (("old", old), ("new", new)):
+        out = tmp_path / f"index-{label}.json"
+        rc, _, err = run(capsys, "index", "--report", "code", "--repo", REPO, "--qmetrics-ref", "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                         "--python-version", "3.12", "--rev", REV, "--target", "main", "--file", path, "--out", str(out))
+        assert rc == 0, err
+        indexes.append(json.loads(out.read_text(encoding="utf-8")))
+    old_index, new_index = indexes
+    assert set(new_index) == set(old_index)
+    assert set(new_index["files"][0]) == {"kind", "name", "schema_version", "sha256"}
+    assert new_index["files"][0]["sha256"] == hashlib.sha256((tmp_path / "new" / "qmetrics-repo.json").read_bytes()).hexdigest()
+    assert new_index["files"][0]["sha256"] != old_index["files"][0]["sha256"]
