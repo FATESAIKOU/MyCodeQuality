@@ -96,6 +96,17 @@ def test_three():
     assert ratios["deep_functions"]["den"] == totals["functions"]
     assert ratios["ast_dup_functions"]["den"] == totals["functions"]
 
+    assert counts["dup_windows"] == 5
+    assert d["findings"] == [
+        {"kind": "ast_dup_function", "file": "src/d.py", "function": "ast_one", "value": 2},
+        {"kind": "ast_dup_function", "file": "src/d.py", "function": "ast_two", "value": 2},
+        {"kind": "deep_function", "file": "src/a.py", "function": "fn_deep", "value": 4},
+        {"kind": "dup_windows", "file": "src/b.py", "function": None, "value": 5},
+        {"kind": "dup_windows", "file": "src/c.py", "function": None, "value": 5},
+        {"kind": "long_function", "file": "src/a.py", "function": "fn_long", "value": 60},
+    ]
+    assert d["warnings"] == []
+
 
 def test_C_A2_thresholds(make_repo):
     r1001 = make_repo()
@@ -103,12 +114,16 @@ def test_C_A2_thresholds(make_repo):
     r1001.commit({"src/a.py": lines_1001})
     d1001 = run_repo(r1001.path, "--json").data()
     assert d1001["counts"]["long_files"] == 1
+    assert d1001["findings"] == [
+        {"kind": "long_file", "file": "src/a.py", "function": None, "value": 1001}
+    ]
 
     r1000 = make_repo()
     lines_1000 = "\n".join(f"x_{i} = {i}" for i in range(1000)) + "\n"
     r1000.commit({"src/a.py": lines_1000})
     d1000 = run_repo(r1000.path, "--json").data()
     assert d1000["counts"]["long_files"] == 0
+    assert d1000["findings"] == []
 
     r_fn = make_repo()
     body_50 = "\n".join(f"    a_{i} = {i}" for i in range(50))  # 1 (def) + 50 lines = 51 lines
@@ -140,6 +155,10 @@ def f50():
     dfn = run_repo(r_fn.path, "--json").data()
     assert dfn["counts"]["long_functions"] == 1
     assert dfn["counts"]["deep_functions"] == 1
+    assert dfn["findings"] == [
+        {"kind": "deep_function", "file": "src/funcs.py", "function": "d4", "value": 4},
+        {"kind": "long_function", "file": "src/funcs.py", "function": "f51", "value": 51},
+    ]
 
 
 def test_C_A3_tree_at_rev_uncommitted_and_old_commit(make_repo):
@@ -337,6 +356,15 @@ def test_C_A7_shallow_clone_grafts_and_unknown_revision(make_repo, tmp_path):
     assert res_badrev.rc == 2
     assert res_badrev.out == ""
     assert "error unknown_revision:" in res_badrev.err
+    assert len(res_badrev.err.splitlines()) == 1
+    assert res_badrev.err.endswith("\n")
+
+    res_nl = run_repo(r.path, "--rev", "rev\nwith\nnewlines", "--json")
+    assert res_nl.rc == 2
+    assert res_nl.out == ""
+    assert len(res_nl.err.splitlines()) == 1
+    assert res_nl.err.endswith("\n")
+    assert "error unknown_revision: cannot resolve a commit: rev\\nwith\\nnewlines" in res_nl.err
 
 
 def test_C_A8_diff_and_gate_unchanged(make_repo, tmp_path):
@@ -358,3 +386,124 @@ def test_C_A8_diff_and_gate_unchanged(make_repo, tmp_path):
                                 "--labels-json", "[]"],
                                capture_output=True, text=True)
     assert proc_gate.returncode in (0, 1)
+
+
+def test_dup_windows_cross_file_and_distinct_semantics(make_repo):
+    # 1. Same-file duplicate windows are NOT counted
+    # Window of 6 lines repeated inside the same file only
+    win_internal = "\n".join(f"internal_rep_line_{i} = {i}" for i in range(6))
+    internal_py = f"""# internal dup only
+{win_internal}
+
+# repeat same window
+{win_internal}
+"""
+    r_internal = make_repo()
+    r_internal.commit({"src/single.py": internal_py})
+    d_internal = run_repo(r_internal.path, "--json").data()
+    assert d_internal["counts"]["dup_windows"] == 0
+    assert [f for f in d_internal["findings"] if f["kind"] == "dup_windows"] == []
+
+    # 2. Three files sharing the exact same 6-line window:
+    # counts as 1 distinct window (dup_windows == 1),
+    # but each of the three files gets one finding with value == 1.
+    win_tri = "\n".join(f"shared_tri_line_{i} = {10 + i}" for i in range(6))
+    r_tri = make_repo()
+    r_tri.commit({
+        "src/f1.py": f"# f1\n{win_tri}\n",
+        "src/f2.py": f"# f2\n{win_tri}\n",
+        "src/f3.py": f"# f3\n{win_tri}\n",
+    })
+    d_tri = run_repo(r_tri.path, "--json").data()
+    assert d_tri["counts"]["dup_windows"] == 1
+    dup_tri_findings = [f for f in d_tri["findings"] if f["kind"] == "dup_windows"]
+    assert dup_tri_findings == [
+        {"kind": "dup_windows", "file": "src/f1.py", "function": None, "value": 1},
+        {"kind": "dup_windows", "file": "src/f2.py", "function": None, "value": 1},
+        {"kind": "dup_windows", "file": "src/f3.py", "function": None, "value": 1},
+    ]
+
+    # 3. Multiple shared windows:
+    # f1, f2, f3 share win_tri (1 window)
+    # f1 also repeats an internal window (should not be counted)
+    # f2 and f3 share win_tri followed by win_pair (12 consecutive lines -> 7 sliding windows)
+    win_pair = "\n".join(f"shared_pair_line_{i} = {100 + i}" for i in range(6))
+    r_multi = make_repo()
+    r_multi.commit({
+        "src/f1.py": f"# f1\n{win_tri}\n{win_internal}\n{win_internal}\n",
+        "src/f2.py": f"# f2\n{win_tri}\n{win_pair}\n",
+        "src/f3.py": f"# f3\n{win_tri}\n{win_pair}\n",
+    })
+    d_multi = run_repo(r_multi.path, "--json").data()
+    # Distinct cross-file windows: 1 shared across f1,f2,f3 + 6 shared between f2,f3 = 7
+    # win_internal is repeated in f1 only and is NOT counted.
+    assert d_multi["counts"]["dup_windows"] == 7
+    dup_multi_findings = [f for f in d_multi["findings"] if f["kind"] == "dup_windows"]
+    assert dup_multi_findings == [
+        {"kind": "dup_windows", "file": "src/f1.py", "function": None, "value": 1},
+        {"kind": "dup_windows", "file": "src/f2.py", "function": None, "value": 7},
+        {"kind": "dup_windows", "file": "src/f3.py", "function": None, "value": 7},
+    ]
+
+
+def test_repo_summary_mode_human_readable(make_repo):
+    # 1. Normal repo with findings and counts
+    r = make_repo()
+    long_body = "\n".join(f"    v_{i} = {i}" for i in range(59))
+    a_py = f"""def fn_long():
+{long_body}
+"""
+    shared_block = "\n".join(f"alpha_shared_line_{i} = {100 + i}" for i in range(10))
+    b_py = f"# b\n{shared_block}\n"
+    c_py = f"# c\n{shared_block}\n"
+    c_sha = r.commit({
+        "src/a.py": a_py,
+        "src/b.py": b_py,
+        "src/c.py": c_py,
+        "tests/test_t.py": "def test_ok(): pass\n",
+    })
+
+    res = run_repo(r.path)  # no --json
+    assert res.rc == 0, res.err
+    lines = res.out.splitlines()
+    assert any(line.startswith("qmetrics repo ") for line in lines)
+    assert f"rev {c_sha}" in lines
+    assert "totals: files=3 lines=82 functions=1 tests=1" in lines
+    assert "long_functions: 1" in lines
+    assert "dup_windows: 5" in lines
+    assert "smell_events: 6" in lines
+    assert "  long_function src/a.py fn_long 60" in lines
+    assert "  dup_windows src/b.py 5" in lines
+    assert "  dup_windows src/c.py 5" in lines
+
+    # 2. Syntax error in src -> INCOMPLETE and undetermined
+    r_err = make_repo()
+    r_err.commit({
+        "src/bad.py": "def broken(:\n",
+    })
+    res_err = run_repo(r_err.path)
+    assert res_err.rc == 0, res_err.err
+    assert "INCOMPLETE: 1 parse failure(s); null values are undetermined" in res_err.out
+    assert "totals: files=1 lines=1 functions=unknown tests=0" in res_err.out
+    assert "parse_failure (src): src/bad.py -> undetermined" in res_err.out
+
+    # 3. Not applicable: no .py files in src
+    r_empty = make_repo()
+    r_empty.commit({
+        "src/README.txt": "No python files\n",
+    })
+    res_empty = run_repo(r_empty.path)
+    assert res_empty.rc == 0, res_empty.err
+    assert "not applicable: no .py files under src" in res_empty.out
+
+    # 4. Preflight warning output in summary
+    alt_file = r.gitdir() / "objects" / "info" / "alternates"
+    alt_file.parent.mkdir(parents=True, exist_ok=True)
+    alt_file.write_text("/nonexistent/objects\n")
+    try:
+        res_warn = run_repo(r.path)
+        assert res_warn.rc == 0, res_warn.err
+        assert "warning: alternates_present" in res_warn.out
+    finally:
+        alt_file.unlink()
+

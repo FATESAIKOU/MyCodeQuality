@@ -65,11 +65,13 @@ qmetrics repo [--repo PATH] [--rev REV] [--src src] [--tests tests] [--json]
 
 Without `--json`, prints a human-readable summary. With `--json`, prints a deterministic JSON object following design §3.4:
 
+- `applicable`: boolean, `true` if any `.py` file exists under `src`, `false` otherwise.
 - `totals`: `files` (.py count), `lines` (total line count), `functions` (function/method count), `tests` (count of `test_*` functions in `tests`).
 - `counts`: `long_files` (> 1000 lines), `long_functions` (> 50 lines), `deep_functions` (nesting depth >= 4), `ast_dup_functions` (AST-identical functions >= 5 lines, grouped: size - 1 summed), `dup_windows` (6-line duplicate code windows appearing across >= 2 files), and `smell_events` (sum of the five categories).
 - `ratios`: `{num, den}` ratios for `long_files` (den: `totals.files`), `long_functions`, `deep_functions`, and `ast_dup_functions` (den: `totals.functions`). If denominator is 0, the ratio is `null`. No floating-point numbers are output.
 - `findings`: detail list for each detected issue (`long_file`, `long_function`, `deep_function`, `ast_dup_function`, `dup_windows`), sorted deterministically by `(kind, file, function, value)`.
 - `parse_failures`: files that failed to parse (`{file, scope}`). If any file in `src` fails to parse, `totals.functions`, `counts`, `ratios`, and `findings` are `null` (fail-closed); if in `tests`, `totals.tests` is `null`.
+- `warnings`: array of preflight check warnings (such as `alternates_present`, `replace_refs_present`).
 
 ## Limits
 
