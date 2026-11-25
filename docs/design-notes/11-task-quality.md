@@ -242,7 +242,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 門檻（1000、50、4、6 行、5 行）與 `diff` 的事件定義相同，所以兩個命令的數字可以對照。
 
-認知複雜度（`totals.cognitive_units`、`totals.cognitive`、`counts.complex_functions`、`ratios.complex_functions`、`complex_function` 的 findings）是自寫、只用 `ast` 的近似，規則表在 `src/qmetrics/cognitive.py` 的程式註解裡。它不等於 SonarQube 的數字：括號內的布林運算序列、`match` 的 case guard、lambda 與遞迴的計法與 SonarQube 不同或未計。門檻 15 是 `> 15` 才算，放在 `src/qmetrics/repo.py`。
+認知複雜度（`totals.cognitive_units`、`totals.cognitive`、`counts.complex_functions`、`ratios.complex_functions`、`complex_function` 的 findings）是自寫、只用 `ast` 的近似，規則表在 `src/qmetrics/cognitive.py` 的模組 docstring 裡（R1–R18 的編號與說明都在那裡）。它不等於 SonarQube 的數字：括號內的布林運算序列、`match` 的 case guard、lambda 與遞迴的計法與 SonarQube 不同或未計。已知差異：同名（同 qualname）的函式若分別放在不同父節點下（例如 `def f` 與 `if X:` 裡的 `def f`），鍵會碰撞，後者覆蓋前者，前者的單位被丟掉（與 `metrics.funcs` 相同；見 #31）。門檻 15 是 `> 15` 才算，放在 `src/qmetrics/repo.py`。
 
 缺值：`src` 下任一檔解析失敗 → `totals.functions`、`totals.cognitive_units`、`totals.cognitive`、`counts`、`ratios`、`findings` 都是 `null`（沿用 diff 的 fail-closed；`files`、`lines` 不用解析，照算）。`tests` 下任一檔解析失敗 → `totals.tests` 是 `null`。失敗的檔列在 `parse_failures`（`{file, scope}`，依 (`file`, `scope`) 排序）。
 

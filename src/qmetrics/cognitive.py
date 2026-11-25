@@ -4,7 +4,28 @@ A scoring unit is a function that is not inside another function (module-level f
 methods). Functions nested in a unit, lambdas and classes inside it are scored into the unit.
 Keys are the `metrics.funcs` keys, restricted to units. No threshold here (see repo.py).
 
-Comments cite the rule-table rows as R1-R18 (rows R17 and R18 are deliberately not counted).
+Rule table. The R numbers in the comments below refer to these rows. "+1" is one increment,
+"+nest" adds the current nesting level, and "nest" is the nesting level inside the construct.
+
+    R1   if: +1 +nest; its body is nested
+    R2   elif: +1, no nest term; the test stays at the parent's nesting
+    R3   else: +1, no nest term; its body is nested
+    R3a  an else holding one if at a deeper column is not an elif: the else is +1 and the if is nested
+    R4   for, async for, while: +1 +nest; body nested
+    R5   else of a loop: +1, no nest term
+    R6   try body and finally: no increment, no nest
+    R7   each except handler: +1 +nest; the handler's type is scored, its body is nested
+    R8   else of try: +1, no nest term
+    R9   ternary (x if c else y): +1 +nest; its parts are nested
+    R10  match: +1 +nest once for the whole match; case guards are scored; case bodies are nested
+    R11  boolean operators: +1 per run of like operators (`and` / `or`), over the whole BoolOp tree
+    R12  nested def: nested unless its enclosing function is a wrapper (only defs and `return <name>`)
+    R13  lambda: no increment itself; its body is nested
+    R14  def directly in a class body: nesting restarts at 0
+    R15  comprehensions: no increment, no nest
+    R16  with, async with, break, continue, return, await, yield, walrus, assert, raise: no increment
+    R17  recursion: deliberately not counted
+    R18  decorators, default values and annotations: deliberately not counted
 """
 
 import ast
@@ -124,31 +145,43 @@ class _Scorer:
         return score + self.else_(orelse, nest)
 
     def expr(self, node, nest, bools_only=False):
-        if isinstance(node, ast.BoolOp):  # R11
-            return self.boolop(node, nest, bools_only)
-        if isinstance(node, ast.IfExp) and not bools_only:  # R9
-            return 1 + nest + sum(self.expr(c, nest + 1) for c in (node.test, node.body, node.orelse))
-        if isinstance(node, ast.Lambda):  # R13
-            return 0 if bools_only else self.expr(node.body, nest + 1)
-        # R15, R16 and everything else: no increment, same nesting
-        return sum(self.expr(c, nest, bools_only) for c in ast.iter_child_nodes(node))
+        # explicit stack, not recursion: a long `a + a + …` or method chain must not hit the
+        # recursion limit (the rules are the same as the recursive form)
+        score = 0
+        todo = [(node, nest, bools_only)]
+        while todo:
+            n, k, bo = todo.pop()
+            if isinstance(n, ast.BoolOp):  # R11
+                runs, operands = self.boolop(n)
+                score += runs
+                todo.extend((v, k, bo) for v in operands)
+            elif isinstance(n, ast.IfExp) and not bo:  # R9
+                score += 1 + k
+                todo.extend((c, k + 1, False) for c in (n.test, n.body, n.orelse))
+            elif isinstance(n, ast.Lambda):  # R13
+                if not bo:
+                    todo.append((n.body, k + 1, False))
+            else:  # R15, R16 and everything else: no increment, same nesting
+                todo.extend((c, k, bo) for c in ast.iter_child_nodes(n))
+        return score
 
-    def boolop(self, node, nest, bools_only):
+    def boolop(self, node):
         # One increment per run of like operators, counted over the in-order flattening of the
         # whole BoolOp tree (a BoolOp nested directly in another one continues its sequence).
+        # -> (runs, operands); the operands (non-BoolOp values) are scored by the caller
         ops = []
-        score = 0
-
-        def walk(b):
-            nonlocal score
-            for i, v in enumerate(b.values):
-                if i:
-                    ops.append(type(b.op))
-                if isinstance(v, ast.BoolOp):
-                    walk(v)
-                else:
-                    score += self.expr(v, nest, bools_only)
-
-        walk(node)
+        operands = []
+        todo = [node]  # AST nodes, or an operator class as a marker between two values
+        while todo:
+            x = todo.pop()
+            if isinstance(x, type):
+                ops.append(x)
+            elif isinstance(x, ast.BoolOp):
+                for i in reversed(range(len(x.values))):
+                    todo.append(x.values[i])
+                    if i:
+                        todo.append(type(x.op))
+            else:
+                operands.append(x)
         runs = sum(1 for i, op in enumerate(ops) if i == 0 or op is not ops[i - 1])
-        return runs + score
+        return runs, operands

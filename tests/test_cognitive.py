@@ -58,6 +58,10 @@ def test_C_M1_R4_loops_are_structural_and_nest():
     assert value("def f(a, b):\n    while a:\n        if b:\n            pass\n") == 3
 
 
+def test_C_M1_R4_async_for_nests_its_body():
+    assert value("async def f(xs, a):\n    async for x in xs:\n        if a:\n            pass\n") == 3
+
+
 def test_C_M1_R5_loop_else_is_hybrid():
     assert value("def f(xs):\n    for x in xs:\n        pass\n    else:\n        pass\n") == 2
     assert value("def f(a):\n    while a:\n        pass\n    else:\n        pass\n") == 2
@@ -74,6 +78,18 @@ def test_C_M1_R7_each_handler_counts_once_regardless_of_types():
     assert value(src) == 2
     # the exception type is an expression and is scored like one (boolean sequence here)
     assert value("def f():\n    try:\n        pass\n    except A and B:\n        pass\n") == 2
+
+
+def test_C_M1_R7_try_with_two_handlers_each_holding_an_if_is_seven():
+    src = ("def f(a, b, c):\n    try:\n        if a:\n            pass\n"
+           "    except E1:\n        if b:\n            pass\n"
+           "    except E2:\n        if c:\n            pass\n")
+    assert value(src) == 7  # try's if (1); each handler 1 + its if (1 + nesting 1)
+
+
+def test_C_M1_R7_except_star_handler_is_scored_like_except():
+    src = "def f(a):\n    try:\n        pass\n    except* E:\n        if a:\n            pass\n"
+    assert value(src) == 3  # except* (1) + the if in its body (1 + nesting 1)
 
 
 def test_C_M1_R8_try_else_is_hybrid():
@@ -146,6 +162,10 @@ def test_C_M1_R16_with_jumps_await_yield_walrus_add_nothing():
     assert got["g"] == 0
 
 
+def test_C_M1_R16_async_with_adds_nothing_and_does_not_nest():
+    assert value("async def f(cm, a):\n    async with cm:\n        if a:\n            pass\n") == 1
+
+
 def test_C_M1_R17_recursion_is_not_counted():
     assert value("def f(n):\n    return f(n - 1)\n") == 0
 
@@ -181,18 +201,58 @@ def test_C_M1_keys_are_units_with_metrics_funcs_keys():
     assert not any("<locals>" in q for q, _ in got)
 
 
+def test_C_M1_known_limitation_same_key_units_overwrite_see_issue_31():
+    # Known limitation (#31, same as metrics.funcs): two defs with the same key in different
+    # parents collide, and the later one replaces the earlier. Here f (value 6) is lost.
+    src = ("def f(a, b, c):\n    if a:\n        if b:\n            if c:\n                pass\n"
+           "if a:\n    def f():\n        pass\n")
+    assert scores(src) == {("f", 0): 0}
+
+
+# ---- C-M1: long expressions must not raise RecursionError (the repo run must still exit 0) ----
+
+def test_C_M1_long_binop_chain_does_not_break_repo(make_repo):
+    r = make_repo()
+    plus = "def f(a):\n    if a:\n        pass\n    return " + " + ".join(["a"] * 900) + "\n"
+    r.commit({"src/a.py": plus})
+    res = run_repo(r.path, "--json")
+    assert res.returncode == 0, res.stderr[-500:]
+    out = json.loads(res.stdout)
+    assert out["parse_failures"] == []
+    assert out["totals"]["functions"] == 1
+    assert out["totals"]["cognitive_units"] == 1
+    assert out["totals"]["cognitive"] == 1  # the one if; the + chain adds nothing
+    assert out["counts"]["deep_functions"] == 0
+    assert out["counts"]["long_functions"] == 0
+    assert out["counts"]["complex_functions"] == 0
+
+
+def test_C_M1_long_method_chain_does_not_break_repo(make_repo):
+    r = make_repo()
+    chain = "def g(a):\n    if a:\n        pass\n    return " + ".".join(["a(1)"] * 400) + "\n"
+    r.commit({"src/b.py": chain})
+    res = run_repo(r.path, "--json")
+    assert res.returncode == 0, res.stderr[-500:]
+    out = json.loads(res.stdout)
+    assert out["parse_failures"] == []
+    assert out["totals"]["functions"] == 1
+    assert out["totals"]["cognitive"] == 1
+    assert out["counts"]["deep_functions"] == 0
+    assert out["counts"]["complex_functions"] == 0
+
+
 # ---- C-M2: nested functions, decorators (Appendix A), wrapper boundary ----
 
 def test_C_M2_appendix_a_python_examples_total_1_2_1():
     src = textwrap.dedent("""\
-        def a_decorator(func):
+        def tagged_wrapper(func):
             def inner(*args, **kwargs):
                 if func:
                     pass
                 return func(*args, **kwargs)
             return inner
 
-        def not_a_decorator(func):
+        def mixed_prelude(func):
             my_var = func * 2
             def inner(*args, **kwargs):
                 if func:
@@ -200,18 +260,18 @@ def test_C_M2_appendix_a_python_examples_total_1_2_1():
                 return func(*args, **kwargs)
             return inner
 
-        def decorator_generator(func):
-            def a_decorator(func):
+        def wrapper_factory(func):
+            def tagged_wrapper(func):
                 def inner(*args, **kwargs):
                     if func:
                         pass
                     return func(*args, **kwargs)
                 return inner
-            return a_decorator
+            return tagged_wrapper
     """)
-    assert value(src, "a_decorator") == 1
-    assert value(src, "not_a_decorator") == 2
-    assert value(src, "decorator_generator") == 1
+    assert value(src, "tagged_wrapper") == 1
+    assert value(src, "mixed_prelude") == 2
+    assert value(src, "wrapper_factory") == 1
 
 
 def test_C_M2_wrapper_boundary_cases():
