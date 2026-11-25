@@ -1247,7 +1247,7 @@ def test_l2_atomic_write_failure_closes_before_unlink(tmp_path: Path, monkeypatc
     assert events == ["close", "unlink"]
 
 
-def test_l3_missing_fields_and_unrecognized_returns_converted_to_tool_error(tmp_path: Path):
+def test_l3_missing_fields_and_unrecognized_returns_converted_to_tool_error(tmp_path: Path, monkeypatch, capsys):
     """L3: Missing API fields or non-ToolError exceptions in runner become ToolError and exit 2 in CLI."""
     out_file = tmp_path / "snap_l3.json"
 
@@ -1277,9 +1277,15 @@ def test_l3_missing_fields_and_unrecognized_returns_converted_to_tool_error(tmp_
         fetch_snapshot("acme/widgets#11", out_file, runner=missing_run_id_runner)
     assert exc_info.value.code == "gh_failed"
 
-    # 3. CLI exit code 2 on tool error
+    # 3. CLI exit code 2 on non-ToolError exception in fetch_snapshot
+    def boom(*args, **kwargs):
+        raise RuntimeError("line1\nline2")
+
+    monkeypatch.setattr("taskquality.cli.fetch_snapshot", boom)
     rc = main(["fetch", "--ticket", "acme/widgets#11", "--out", str(out_file)])
     assert rc == 2
+    err = capsys.readouterr().err
+    assert err == "taskquality: error gh_failed: line1\\nline2\n"
 
 
 def test_l4_out_parent_directory_not_exists_raises_out_unwritable(tmp_path: Path):
@@ -1293,5 +1299,82 @@ def test_l4_out_parent_directory_not_exists_raises_out_unwritable(tmp_path: Path
     assert exc_info.value.code == "out_unwritable"
     assert "parent directory does not exist" in exc_info.value.message
     assert not nonexistent_dir.exists()
+
+
+def test_explicit_pr_canonical_casing_from_api(tmp_path: Path):
+    """Low 1: Explicit PR with non-canonical casing uses base.repo.full_name for output PR id."""
+    out_file = tmp_path / "snap_canonical.json"
+
+    def mock_runner(argv: list[str]) -> tuple[str, str, int]:
+        cmd_str = " ".join(argv).lower()
+        if "99" in cmd_str:
+            if "pulls/99" in cmd_str and "--paginate" not in argv:
+                pr_data = {
+                    "base": {"repo": {"full_name": "acme/widgets"}},
+                    "head": {"sha": "abc99", "ref": "feat-99"},
+                    "title": "PR 99",
+                    "body": "closes #11",
+                    "state": "closed",
+                    "draft": False,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "merged_at": "2026-01-02T00:00:00Z",
+                    "closed_at": "2026-01-02T00:00:00Z",
+                }
+                return json.dumps(pr_data), "", 0
+            return "[]", "", 0
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot(
+        ticket="acme/widgets#11",
+        out_path=out_file,
+        explicit_prs=["ACME/WIDGETS#99"],
+        runner=mock_runner,
+    )
+    pr_ids = [p["id"] for p in snap["prs"]]
+    assert "acme/widgets#99" in pr_ids
+    assert "ACME/WIDGETS#99" not in pr_ids
+
+
+def test_retry_after_capped_at_60_seconds(tmp_path: Path):
+    """Low 2: Retry-After greater than 60 seconds is capped at 60 seconds sleep."""
+    out_file = tmp_path / "snap_ra_cap.json"
+    sleep_calls = []
+    attempt_count = 0
+
+    def rl_runner(argv: list[str]) -> tuple[str, str, int]:
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            err_msg = "HTTP/1.1 429 Too Many Requests\nRetry-After: 120\n(HTTP 429)"
+            return "", err_msg, 429
+        return make_golden_runner()(argv)
+
+    snap = fetch_snapshot(
+        "acme/widgets#11",
+        out_file,
+        runner=rl_runner,
+        sleeper=sleep_calls.append,
+    )
+    assert snap["ticket"] == "acme/widgets#11"
+    assert sleep_calls == [60]
+
+
+def test_invalid_run_attempt_raises_gh_failed(tmp_path: Path):
+    """Low 3: Invalid non-integer run_attempt raises gh_failed ToolError."""
+    out_file = tmp_path / "snap_bad_attempt.json"
+
+    def bad_attempt_runner(argv: list[str]) -> tuple[str, str, int]:
+        out, err, code = make_golden_runner()(argv)
+        if "/repos/acme/widgets/actions/runs" in " ".join(argv):
+            data = json.loads(out)
+            data["workflow_runs"][0]["run_attempt"] = "not_an_int"
+            return json.dumps(data), err, code
+        return out, err, code
+
+    with pytest.raises(ToolError) as exc_info:
+        fetch_snapshot("acme/widgets#11", out_file, runner=bad_attempt_runner)
+    assert exc_info.value.code == "gh_failed"
+    assert "invalid workflow run_attempt" in exc_info.value.message
+
 
 

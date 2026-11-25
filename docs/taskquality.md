@@ -338,4 +338,4 @@
 
 ### 分頁與限流處理
 - **分頁**：REST 請求使用 `gh api --paginate`，GraphQL 迴圈檢查 `pageInfo.hasNextPage` 與 `endCursor`。任何 REST 分頁呼叫或 GraphQL 分頁中途回傳非 0 狀態碼，一律視為工具錯誤（`incomplete_pagination`），不寫出快照（僅單頁端點失敗使用 `gh_failed`）。
-- **限流偵測與重試**：當指令執行回傳非 0 且 stderr 包含 `(HTTP 429)` 或 `(HTTP 403)` 且訊息包含 `rate limit`（不分大小寫），或 GraphQL 回應中包含 `errors[].type == "RATE_LIMITED"`，均視為觸發限流。若回應帶有 `Retry-After` 或 `x-ratelimit-reset` 標頭文字則依其等待，若無標頭則固定等待 60 秒（單次睡眠上限 60 秒）。最多自動重試 3 次（共 4 次請求）；若重試用盡仍被限流，則拋出 `rate_limited` 工具錯誤。
+- **限流偵測與重試**：當指令執行回傳非 0 且（stderr 包含 `(HTTP 429)`、或 exit code 為 429、或 stderr 包含 `(HTTP 403)` / exit code 為 403 且訊息包含 `rate limit`（不分大小寫）），或 GraphQL 回應中包含 `errors[].type == "RATE_LIMITED"`，均視為觸發限流。若回應帶有 `Retry-After` 或 `x-ratelimit-reset` 標頭文字則依其等待，若無標頭則固定等待 60 秒（單次睡眠上限 60 秒）。最多自動重試 3 次（共 4 次請求）；若重試用盡仍被限流，則拋出 `rate_limited` 工具錯誤。

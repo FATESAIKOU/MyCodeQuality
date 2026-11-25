@@ -136,7 +136,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 1. 候選 PR：GraphQL `repository(owner,name).issue(number).timelineItems(itemTypes:[CONNECTED_EVENT, CROSS_REFERENCED_EVENT])`，取來源是 PR 的；再加上 `--pr` 指定的。`--search-repo` 給了就只留那些 repo 的 PR（不給＝不限）。
 2. 每個 PR：REST `GET /repos/{o}/{r}/pulls/{n}`；`/issues/{n}/comments`、`/pulls/{n}/reviews` 全頁；Actions `GET /repos/{o}/{r}/actions/runs?event=pull_request&branch={head_ref}` 全頁後，只留 `pull_requests[].number == n` 或 `head_sha` 屬於該 PR 的 commit（`/pulls/{n}/commits`）的 run；重跑的 attempt 以 `/actions/runs/{id}/attempts/{k}` 補齊。
 3. 分頁：REST 用 `gh api --paginate`；GraphQL 以 `pageInfo.endCursor` 迴圈。任何一頁失敗就是 `incomplete_pagination`，不寫檔。
-4. 限流：回應 403／429 且帶限流標頭時，最多重試 3 次，等待 `Retry-After` 或到 `x-ratelimit-reset`，單次上限 60 秒；用完回 `rate_limited`。這是 `fetch` 唯一用到時鐘的地方（只用來睡），時鐘的值不進快照。
+4. 限流：回應非 0 包含 429、或 403 且訊息包含限流關鍵字、或 GraphQL 回傳 RATE_LIMITED 時，最多重試 3 次；若帶 Retry-After 或 x-ratelimit-reset 則依其等待，若無標頭則固定等待 60 秒（單次睡眠上限 60 秒）；用完回 rate_limited。這是 fetch 唯一用到時鐘的地方（只用來睡），時鐘的值不進快照。
 5. 快照不記抓取時刻、帳號、作者名、機器位址。同一個 API 狀態抓兩次得到位元組相同的快照。
 6. 呼叫 `gh` 的部分是可注入的 runner（argv → stdout／exit），測試用錄好的合成回應，不連網。
 

@@ -101,6 +101,15 @@ def invoke_runner(runner: Callable[[list[str]], Any], argv: list[str]) -> tuple[
         raise ToolError("gh_failed", f"error invoking gh runner: {e}") from e
 
 
+def parse_retry_headers(combined: str) -> tuple[int | None, int | None]:
+    """Extract Retry-After and x-ratelimit-reset values from text."""
+    m_ra = re.search(r"(?i)retry-after:\s*(\d+)", combined)
+    m_reset = re.search(r"(?i)x-ratelimit-reset:\s*(\d+)", combined)
+    retry_after = int(m_ra.group(1)) if m_ra else None
+    reset_epoch = int(m_reset.group(1)) if m_reset else None
+    return retry_after, reset_epoch
+
+
 def check_rate_limit(stdout: str, stderr: str, code: int) -> tuple[bool, int | None, int | None]:
     """Check if response indicates HTTP 403 or 429 rate limit.
 
@@ -129,12 +138,7 @@ def check_rate_limit(stdout: str, stderr: str, code: int) -> tuple[bool, int | N
     if not (is_429 or is_403):
         return False, None, None
 
-    m_ra = re.search(r"(?i)retry-after:\s*(\d+)", combined)
-    m_reset = re.search(r"(?i)x-ratelimit-reset:\s*(\d+)", combined)
-
-    retry_after = int(m_ra.group(1)) if m_ra else None
-    reset_epoch = int(m_reset.group(1)) if m_reset else None
-
+    retry_after, reset_epoch = parse_retry_headers(combined)
     return True, retry_after, reset_epoch
 
 
@@ -169,10 +173,7 @@ def execute_with_retry(
         if not is_rl and check_graphql_rate_limit(stdout):
             is_rl = True
             combined = f"{stderr}\n{stdout}"
-            m_ra = re.search(r"(?i)retry-after:\s*(\d+)", combined)
-            m_reset = re.search(r"(?i)x-ratelimit-reset:\s*(\d+)", combined)
-            retry_after = int(m_ra.group(1)) if m_ra else None
-            reset_epoch = int(m_reset.group(1)) if m_reset else None
+            retry_after, reset_epoch = parse_retry_headers(combined)
 
         if is_rl:
             if attempt < max_retries:
@@ -187,7 +188,6 @@ def execute_with_retry(
             else:
                 raise ToolError("rate_limited", f"GitHub API rate limit exceeded after {max_retries} retries")
         return stdout, stderr, code
-    raise ToolError("rate_limited", f"GitHub API rate limit exceeded after {max_retries} retries")
 
 
 def strip_http_headers(raw: str) -> str:
@@ -325,8 +325,6 @@ def fetch_snapshot(
         if "errors" in data and data["errors"]:
             err_msgs = " ".join(e.get("message", "") for e in data["errors"])
             combined = err_msgs.lower()
-            if any(isinstance(e, dict) and e.get("type") == "RATE_LIMITED" for e in data["errors"]):
-                raise ToolError("rate_limited", f"GitHub API rate limit exceeded: {err_msgs}")
             if (
                 "could not resolve to an issue" in combined
                 or "not_found" in combined
@@ -523,8 +521,8 @@ def fetch_snapshot(
                 raise ToolError("gh_failed", f"invalid workflow run id {r.get('id')!r}: {e}")
             try:
                 run_attempt = int(r.get("run_attempt", 1))
-            except (ValueError, TypeError):
-                run_attempt = 1
+            except (ValueError, TypeError) as e:
+                raise ToolError("gh_failed", f"invalid workflow run_attempt {r.get('run_attempt')!r}: {e}")
 
             if run_attempt > 1:
                 for k in range(1, run_attempt):
