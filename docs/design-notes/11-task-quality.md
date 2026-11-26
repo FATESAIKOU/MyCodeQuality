@@ -64,7 +64,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 - 陣列的排序在各欄位寫明；物件靠 `sort_keys`。
 - PR 識別一律 `owner/repo#number`；排序時依 (owner/repo 字串, number 數字)。
 - 每個檔都有 `kind` 與 `schema_version`；讀到不認得的 `kind` 或版本是工具錯誤。未知欄位：輸入檔忽略（前向相容），輸出不加。
-- `warnings`（兩種輸出都有）：taskquality 的輸出固定是空陣列。`qmetrics repo --json` 的 `warnings` 是 preflight 的代碼（`alternates_present`、`replace_refs_present`）與 `arch` 的代碼（`arch_import_root_suspect`、`arch_module_shadowed`）合併、去重、排序後的結果；只有代碼，細節看 §3.4 的 `arch`。
+- `warnings`（兩種輸出都有）：taskquality 的 `warnings` 是提示字串（`unrecognized_verdict`、`ci_workflows_unmatched`，見 docs/taskquality.md），沒有觸發時是空陣列。`qmetrics repo --json` 的 `warnings` 是 preflight 的代碼（`alternates_present`、`replace_refs_present`）與 `arch` 的代碼（`arch_import_root_suspect`、`arch_module_shadowed`）合併、去重、排序後的結果；只有代碼，細節看 §3.4 的 `arch`。
 - 缺值：**鍵不存在**＝沒提供；**值是 `null`**＝提供了但未知。兩者在輸出都是 `null`，`missing[].reason` 分別是 `input_missing`／`input_null`。不補 0。
 
 ### 3.1 快照（`fetch` 的輸出、`score` 的輸入）
