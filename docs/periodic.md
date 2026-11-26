@@ -251,6 +251,7 @@ jobs:
 | `target` | string | `main` | 一個 repo 量多個套件時的區分名（只用 `[A-Za-z0-9._-]`） |
 | `rev` | string | `""`（＝呼叫端的 `github.sha`） | 要量的 commit |
 | `retention-days` | number | `90` | artifact 保存天數（公開 repo 上限 90） |
+| `runs-on` | string | `ubuntu-latest` | 一個 runner 標籤，或 JSON 陣列字串（例如 `["self-hosted","linux"]`）；見 [§9](#9-導入到一個-repo) 自架 runner 的前置 |
 
 `task-quality-report.yml`：
 
@@ -264,6 +265,7 @@ jobs:
 | `settle-days` | number | `2` | 關單後幾天以上、狀態已定，才算 `final`（影響 artifact 名稱） |
 | `max-tickets` | number | `20` | 每次排程最多算幾張（控制 API 用量；上限 256） |
 | `retention-days` | number | `90` | artifact 保存天數 |
+| `runs-on` | string | `ubuntu-latest` | 一個 runner 標籤，或 JSON 陣列字串（例如 `["self-hosted","linux"]`）；`select` 與 `ticket` 兩個 job 都用它 |
 
 `code-quality-report.yml` 輸出 `artifact-name`（本次上傳的 artifact 名稱）。`task-quality-report.yml` 沒有 workflow 層的輸出：每張單各自上傳一個 artifact；要找的時候用 §7 的方法，以 `mcq-task--<owner>.<repo>--i<N>--` 前綴篩。
 
@@ -314,8 +316,17 @@ python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"])' out/i
 2. **同名 artifact**。同一個 commit 或同一張單在不同 run 各產生一份同名 artifact（`overwrite` 只在同一個 run 內覆蓋）。使用方列出後依 `created_at` 取最新一份，或依 `index.json` 的 `rev`／`ticket` 去重（任務品質的取法見 §7：優先取 `final`，都是 `prov` 時才取最晚的一份）；Re-run all jobs 不會撞名。
 3. **手動指定未關閉或非 completed 的單**。ticket job 印 `::warning::` 並略過，job 仍然成功，沒有 artifact。單關閉後再指定一次即可。
 4. **`started_label`**。快照取該標籤第一次 `labeled` 的時刻；沒有標籤時 `cycle_basis` 為 `first_pr_created`。沒有 PR CI 的 repo 在 config v2 設 `ci_required: false`，見 [taskquality.md](taskquality.md) 的 config v2。
-5. **只導入任務品質的 repo**：呼叫端把 `code` job、`on.push` 與程式碼品質的 cron 拿掉，否則每次 push 都會留下一個只有略過 job 的 run；`workflow_dispatch` 的 `rev` 輸入也可以拿掉。
-6. **慣例提醒**。每一輪審查的第一行與 PR 內文的 `Closes`／`Refs`，照本檔 [§1](#1-每一輪審查結論pr-留言的第一行)、[§2](#2-pr-內文寫單號) 的格式寫，否則算不到。
+5. **只導入任務品質的 repo**：呼叫端把 `code` job、`on.push` 與程式碼品質的 cron 拿掉，否則每次 push 都會留下一個只有略過 job 的 run；`workflow_dispatch` 的 `rev` 輸入也可以拿掉。只導入任務品質時 `runs-on` 只影響 `select` 與 `ticket` 兩個 job。
+6. **自架 runner 的前置**（`runs-on` 指向自架 runner 時）：
+   - 作業系統是 Linux，並有 bash、git、`gh`、`jq`、GNU `date`。
+   - workflow 用 `GH_TOKEN` 環境變數認證 `gh`，runner 上不需要事先 `gh auth login`。
+   - 有 pip 與可用的 python。`setup-python` 必須能取得 `python-version` 所選的版本：先看 tool cache，沒有就從 GitHub Releases（`actions/python-versions`）下載，PyPy 另從 PyPy 官方站下載。
+   - 能連到 Actions 的必要網域（[官方文件](https://docs.github.com/en/actions/reference/runners/self-hosted-runners)列出的）：`github.com`、`api.github.com`、`*.actions.githubusercontent.com`、`codeload.github.com`、`results-receiver.actions.githubusercontent.com`、`*.blob.core.windows.net`（log、artifact、cache）。`pip install git+https://…` 要從 `github.com` 取 MCQ，`gh` 的 API 走 `api.github.com`。
+   - 能連 PyPI：pip 預設的 index 是 `https://pypi.org/simple`（[pip 官方文件](https://pip.pypa.io/en/stable/cli/pip_install/)）。實際下載套件檔的主機（推論為 `files.pythonhosted.org`）未由文件確認，**未驗**，要在防火牆內時請實測。
+   - runner 應用程式要夠新：workflow 用的 `actions/setup-python@v5`、`actions/upload-artifact@v4` 都是 `node20` action，runner 需支援 node20，[actions/runner](https://github.com/actions/runner/releases) 在 v2.308.0 才加入（release 說明 “Add node20 to runner”）。更舊的 runner 會在這些步驟失敗。自動更新關閉時，要在新版釋出後 63 天內更新，否則 GitHub 不再派工給它（[官方文件](https://docs.github.com/en/actions/reference/runners/self-hosted-runners)）。artifact 服務對 runner 版本的更細要求**未驗**。
+   - `gh` 至少 v2.48.0（`gh api --paginate --slurp` 在 [v2.48.0](https://github.com/cli/cli/releases/tag/v2.48.0) 的 release 說明中加入）。只有 `task` 的 `select` job 用到 `--slurp`，只導入程式碼品質的 repo 不需要 `gh`、`jq`。
+   - runner 的標籤要與 `runs-on` 一致（單一標籤用字串；多個標籤用 JSON 陣列字串，例如 `["self-hosted","linux"]`，runner 必須同時帶著這些標籤）。`runs-on` 必須是合法 JSON（雙引號）字串陣列或單一標籤，不要有前導空白；空陣列或空字串不會套用預設值 `ubuntu-latest`，而是得到空的 `runs-on`。非法 JSON 會讓 workflow 在求值時失敗。這些都只影響呼叫端自己的 repo。
+7. **慣例提醒**。每一輪審查的第一行與 PR 內文的 `Closes`／`Refs`，照本檔 [§1](#1-每一輪審查結論pr-留言的第一行)、[§2](#2-pr-內文寫單號) 的格式寫，否則算不到。
 
 導入檢查表：
 
