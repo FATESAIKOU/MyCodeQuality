@@ -304,7 +304,7 @@ python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"])' out/i
 
 ## 8. 升版流程（pin 完整 SHA）
 
-1. MCQ 合併後，由維護者打 tag（例如 `v0.4.0`）並寫 release note，標明哪些輸出欄位新增、哪些定義改了。
+1. MCQ 合併後，由維護者打 tag（例如 `v0.4.1`）並寫 release note，標明哪些輸出欄位新增、哪些定義改了。
 2. 各 repo 開一個 PR，**同時**改兩個 ref：`uses:` 的 `@<完整 commit SHA>`，以及 `qmetrics-ref`。兩者要是同一個版本。`.github/workflows/` 的改動需要有 workflow 權限的人推送並 merge。
 3. 那個 PR 的 CI 與一次 `workflow_dispatch` 試跑，確認 artifact 名稱與 `index.json` 正常。
 4. 使用方從 `index.json` 的 `qmetrics_ref`、`tool_version` 與 score 的 `config_digest` 看出定義在哪一刻變了，**不要把升版前後的數字直接相比**。
@@ -325,7 +325,7 @@ python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"])' out/i
    - 能連 PyPI：pip 預設的 index 是 `https://pypi.org/simple`（[pip 官方文件](https://pip.pypa.io/en/stable/cli/pip_install/)）。實際下載套件檔的主機（推論為 `files.pythonhosted.org`）未由文件確認，**未驗**，要在防火牆內時請實測。
    - runner 應用程式要夠新：workflow 用的 `actions/setup-python@v5`、`actions/upload-artifact@v4` 都是 `node20` action，runner 需支援 node20，[actions/runner](https://github.com/actions/runner/releases) 在 v2.308.0 才加入（release 說明 “Add node20 to runner”）。更舊的 runner 會在這些步驟失敗。自動更新關閉時，要在新版釋出後 63 天內更新，否則 GitHub 不再派工給它（[官方文件](https://docs.github.com/en/actions/reference/runners/self-hosted-runners)）。artifact 服務對 runner 版本的更細要求**未驗**。
    - `gh` 至少 v2.48.0（`gh api --paginate --slurp` 在 [v2.48.0](https://github.com/cli/cli/releases/tag/v2.48.0) 的 release 說明中加入）。只有 `task` 的 `select` job 用到 `--slurp`，只導入程式碼品質的 repo 不需要 `gh`、`jq`。
-   - runner 的標籤要與 `runs-on` 一致（單一標籤用字串；多個標籤用 JSON 陣列字串，例如 `["self-hosted","linux"]`，runner 必須同時帶著這些標籤）。`runs-on` 必須是合法 JSON（雙引號）字串陣列或單一標籤，不要有前導空白；空陣列或空字串不會套用預設值 `ubuntu-latest`，而是得到空的 `runs-on`。非法 JSON 會讓 workflow 在求值時失敗。這些都只影響呼叫端自己的 repo。
+   - runner 的標籤要與 `runs-on` 一致（單一標籤用字串；多個標籤用 JSON 陣列字串，例如 `["self-hosted","linux"]`，runner 必須同時帶著這些標籤）。`runs-on` 必須是合法 JSON（雙引號）字串陣列或單一標籤，不要有前導空白；空陣列或空字串不會套用預設值 `ubuntu-latest`，而是得到空的 `runs-on`。非法 JSON 會讓整個 run 在 job 啟動前就失敗（startup failure）：沒有 job 的 log，錯誤文字只出現在 Actions 網頁該 run 的 annotation（測試時用 `gh`、REST API 與 GraphQL 都取不到）。單元素陣列（例如 `["ubuntu-latest"]`）與不傳（預設 `ubuntu-latest`）都已在 GitHub-hosted runner 上驗證可以正常執行；自架 runner 的實跑仍待第一個導入的 repo 確認。這些都只影響呼叫端自己的 repo。
 7. **慣例提醒**。每一輪審查的第一行與 PR 內文的 `Closes`／`Refs`，照本檔 [§1](#1-每一輪審查結論pr-留言的第一行)、[§2](#2-pr-內文寫單號) 的格式寫，否則算不到。
 
 導入檢查表：

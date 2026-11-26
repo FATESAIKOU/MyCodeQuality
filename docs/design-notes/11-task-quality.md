@@ -187,7 +187,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 {
   "kind": "qmetrics-repo",
   "schema_version": 1,
-  "tool_version": "0.4.0",
+  "tool_version": "0.4.1",
   "python_version": "3.12",
   "git_version": "2.43.0",
   "rev": "3333333ddddddddddddddddddddddddddddddddd",
@@ -301,7 +301,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 {
   "kind": "taskquality-report",
   "schema_version": 1,
-  "tool_version": "0.4.0",
+  "tool_version": "0.4.1",
   "ticket": "acme/widgets#11",
   "config_digest": "sha256:…",
   "status": "complete",
