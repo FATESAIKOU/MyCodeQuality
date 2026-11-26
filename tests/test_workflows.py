@@ -306,3 +306,43 @@ def test_m2_actionlint_version_and_checksum_are_literal_in_ci():
 def test_m2_ci_lint_step_runs_actionlint_and_nothing_else():
     step = step_named(load(CI), "test", "Lint periodic-report workflows")
     assert step["run"] == "actionlint .github/workflows/code-quality-report.yml .github/workflows/task-quality-report.yml"
+
+
+# --- runs-on input (#48) -----------------------------------------------------------
+
+RUNS_ON_EXPR = "${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on }}"
+
+
+@pytest.mark.parametrize("path", [CODE, TASK], ids=["code", "task"])
+def test_runs_on_input_is_a_string_defaulting_to_ubuntu_latest(path):
+    spec = trigger(load(path))["workflow_call"]["inputs"]["runs-on"]
+    assert spec["type"] == "string"
+    assert spec["default"] == "ubuntu-latest"
+
+
+def test_runs_on_every_job_uses_the_exact_expression(wf):
+    path, doc = wf
+    for job_name, job in doc["jobs"].items():
+        assert job["runs-on"] == RUNS_ON_EXPR, job_name
+
+
+def strings_with_path(node, where=()):
+    """Every string in the document (values and mapping keys) with its path from the root."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(k, str):
+                yield where + (k,), k
+            yield from strings_with_path(v, where + (k,))
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            yield from strings_with_path(item, where + (i,))
+    elif isinstance(node, str):
+        yield where, node
+
+
+def test_runs_on_input_is_only_used_in_runs_on_fields(wf):
+    path, doc = wf
+    hits = [(where, s) for where, s in strings_with_path(doc) if "inputs.runs-on" in s]
+    assert hits
+    for where, s in hits:
+        assert len(where) == 3 and where[0] == "jobs" and where[2] == "runs-on", (where, s)
