@@ -23,6 +23,7 @@
   - 其他字會被當成 `other`，該 PR 的審查各項（`review_first_pass`、`fix_rounds` 等）會是 `null`（`unrecognized_verdict`）；`re_reviews` 不受影響，仍是數字（實測為 `0`）。
 - 補充說明寫在 `）` **之後**（同一行），或寫在第二行以下。不要寫進括號裡。
 - 這一行必須是留言的**第一行**，前面不能有空白或 markdown。
+- 結論與 `（head <7 碼>）` 必須寫在**同一行**（第一行）：只存留言的第一行，結論後面換行才寫的 `（head …）` 看不到，整行會被當成不是審查行（不是「結論字串帶換行」），這一輪就算不到。細節放第二行以後。
 - 每一輪都要貼，包含「要修」那幾輪；head 是該輪審查的 commit。
 - 結構審查用同格式、角色字換成 `結構審查`。它會被認出來，但不進審查指標。
 
@@ -311,7 +312,8 @@ python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"])' out/i
 2. **同名 artifact**。同一個 commit 或同一張單在不同 run 各產生一份同名 artifact（`overwrite` 只在同一個 run 內覆蓋）。使用方列出後依 `created_at` 取最新一份，或依 `index.json` 的 `rev`／`ticket` 去重（任務品質的取法見 §7：優先取 `final`，都是 `prov` 時才取最晚的一份）；Re-run all jobs 不會撞名。
 3. **手動指定未關閉或非 completed 的單**。ticket job 印 `::warning::` 並略過，job 仍然成功，沒有 artifact。單關閉後再指定一次即可。
 4. **`started_label`**。快照取該標籤第一次 `labeled` 的時刻；沒有標籤時 `cycle_basis` 為 `first_pr_created`。沒有 PR CI 的 repo 在 config v2 設 `ci_required: false`，見 [taskquality.md](taskquality.md) 的 config v2。
-5. **慣例提醒**。每一輪審查的第一行與 PR 內文的 `Closes`／`Refs`，照本檔 [§1](#1-每一輪審查結論pr-留言的第一行)、[§2](#2-pr-內文寫單號) 的格式寫，否則算不到。
+5. **只導入任務品質的 repo**：呼叫端把 `code` job、`on.push` 與程式碼品質的 cron 拿掉，否則每次 push 都會留下一個只有略過 job 的 run；`workflow_dispatch` 的 `rev` 輸入也可以拿掉。
+6. **慣例提醒**。每一輪審查的第一行與 PR 內文的 `Closes`／`Refs`，照本檔 [§1](#1-每一輪審查結論pr-留言的第一行)、[§2](#2-pr-內文寫單號) 的格式寫，否則算不到。
 
 導入檢查表：
 
