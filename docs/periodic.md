@@ -304,3 +304,19 @@ python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"])' out/i
 3. 那個 PR 的 CI 與一次 `workflow_dispatch` 試跑，確認 artifact 名稱與 `index.json` 正常。
 4. 使用方從 `index.json` 的 `qmetrics_ref`、`tool_version` 與 score 的 `config_digest` 看出定義在哪一刻變了，**不要把升版前後的數字直接相比**。
 5. `uses:` 不寫 `@main` 或 `@v4` 這種會移動的 ref；workflow 內的第三方 action 一律用完整 SHA，並在後面的註解寫版本號。
+
+## 9. 導入到一個 repo
+
+1. **前置：憑證範圍**。拉取 artifact 的憑證若限定可見的 repo 範圍，新 repo 要先加進該範圍；否則拉取端會看到 404，這不是 workflow 的錯。
+2. **同名 artifact**。同一個 commit 或同一張單在不同 run 各產生一份同名 artifact（`overwrite` 只在同一個 run 內覆蓋）。使用方列出後依 `created_at` 取最新一份，或依 `index.json` 的 `rev`／`ticket` 去重；Re-run all jobs 不會撞名。
+3. **手動指定未關閉或非 completed 的單**。ticket job 印 `::warning::` 並略過，job 仍然成功，沒有 artifact。單關閉後再指定一次即可。
+4. **`started_label`**。快照取該標籤第一次 `labeled` 的時刻；沒有標籤時 `cycle_basis` 為 `first_pr_created`。沒有 PR CI 的 repo 在 config v2 設 `ci_required: false`，見 [taskquality.md](taskquality.md) 的 config v2。
+5. **慣例提醒**。每一輪審查的第一行與 PR 內文的 `Closes`／`Refs`，照本檔 [§1](#1-每一輪審查結論pr-留言的第一行)、[§2](#2-pr-內文寫單號) 的格式寫，否則算不到。
+
+導入檢查表：
+
+- [ ] 拉取憑證的範圍已包含新 repo
+- [ ] 呼叫端 workflow 與 config（例如 `.github/taskquality.json`）已放進該 repo
+- [ ] `uses:` 與 `qmetrics-ref` 都 pin 完整 SHA（或 tag 對應的 SHA），兩者是同一版
+- [ ] 第一天手動跑一次，確認 artifact 名稱與 `index.json` 正常
+- [ ] 之後每週拉取一次最新 run 的結果
