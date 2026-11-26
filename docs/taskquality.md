@@ -231,7 +231,7 @@
   "schema_version": 1,
   "status": "complete",
   "ticket": "acme/widgets#11",
-  "tool_version": "0.4.0",
+  "tool_version": "0.4.1",
   "usage": {
     "by_model": [
       {
