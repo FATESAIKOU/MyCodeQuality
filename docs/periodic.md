@@ -20,7 +20,7 @@
 - `<結論字>` 只能是下列之一：
   - 通過：`可以 merge`、`通過`
   - 要修：`要修`、`要退回`、`要退回設計`
-  - 其他字會被當成 `other`，該 PR 的審查各項（`review_first_pass`、`fix_rounds` 等）會是 `null`（`unrecognized_verdict`）；`re_reviews` 不受影響，仍是數字（實測為 `0`）。
+  - 其他字會被當成 `other`，該 PR 的審查各項（`review_first_pass`、`fix_rounds` 等）會是 `null`（`unrecognized_verdict`）；`re_reviews` 不受影響，仍是數字（實測為 `0`）。報告的 `warnings` 會列出這種情況（`unrecognized_verdict: N …`，不含結論字本身）。
 - 補充說明寫在 `）` **之後**（同一行），或寫在第二行以下。不要寫進括號裡。
 - 這一行必須是留言的**第一行**，前面不能有空白或 markdown。
 - 結論與 `（head <7 碼>）` 必須寫在**同一行**（第一行）：只存留言的第一行，結論後面換行才寫的 `（head …）` 看不到，整行會被當成不是審查行（不是「結論字串帶換行」），這一輪就算不到。細節放第二行以後。
@@ -89,6 +89,8 @@ Refs #<N>            ← 只是相關（多 PR 的單、不想自動關單時）
 ## 3. 不要改內建 config
 
 這些慣例是現行內建 config 的行為。要放寬或改寫其中任何一條，都會改變內建 `config_digest`，讓升版前後的數字不能比較。個別 repo 真的需要不同設定時，用該 repo 的 config 檔，它只影響那個 repo，而且 digest 看得出來。
+
+若團隊習慣只寫「可以」（不寫「可以 merge」），在自己的 config（v1 或 v2）的 `pass_verdicts` 加上它即可，例如 `["可以 merge", "通過", "可以"]`。**不要改內建預設**：那會改變 `config_digest`。報告的 `warnings` 會提醒 `unrecognized_verdict`，見 [taskquality.md](taskquality.md)。
 
 ## 4. 結果檔：artifact 名稱與 `index.json`
 

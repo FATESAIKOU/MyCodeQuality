@@ -33,6 +33,33 @@ def first_labeled_at(snapshot: dict, label: str) -> str | None:
     return min(times) if times else None
 
 
+def score_warnings(snapshot: dict, unrecognized_count: int, config: dict) -> list[str]:
+    """Advisory hints for the report's `warnings` (§3.0); they never change any other field.
+
+    Sorted and de-duplicated. The conclusion text from GitHub is never echoed back.
+    """
+    warnings = []
+    if unrecognized_count > 0:
+        warnings.append(
+            f"unrecognized_verdict: {unrecognized_count} verdict line(s) matched the pattern "
+            "but the conclusion is in neither pass_verdicts nor fail_verdicts"
+        )
+
+    # ci_workflows names checked against every ci_run in the snapshot; no runs at all means no hint
+    if config["ci_workflows"] is not None:
+        seen = {r["workflow"] for p in snapshot.get("prs", []) for r in p.get("ci_runs", [])}
+        if seen:
+            for name in config["ci_workflows"]:
+                if name in seen:
+                    continue
+                if any(name.lower() == s.lower() for s in seen):
+                    warnings.append(f"ci_workflows_unmatched: {name} (case differs from an existing workflow name)")
+                else:
+                    warnings.append(f"ci_workflows_unmatched: {name}")
+
+    return sorted(set(warnings))
+
+
 def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     """Score a ticket snapshot against input and config according to §4."""
     ticket = snapshot["ticket"]
@@ -64,6 +91,7 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     # 2. Per-PR calculation
     pr_results = []
     pr_missing_map = {}
+    unrecognized_count = 0
 
     for pr in ticket_prs_raw:
         pr_id = pr["id"]
@@ -79,6 +107,8 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
 
         # Verdicts & Review Metrics
         verdicts_source, V = extract_verdicts(pr, input_prs_override, config)
+        if V:
+            unrecognized_count += sum(1 for v in V if v["verdict"] == "other")
         if V is None:
             verdicts = None
             first_review_pass = None
@@ -534,5 +564,5 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         "ticket": ticket,
         "tool_version": TOOL_VERSION,
         "usage": usage,
-        "warnings": [],
+        "warnings": score_warnings(snapshot, unrecognized_count, config),
     }

@@ -83,6 +83,7 @@ def render_score_summary(report: dict) -> str:
     out.append(f"cycle_seconds: {fmt_v(m['cycle_seconds'])} rework_prs: {fmt_v(m['rework_prs'])}")
     if report["missing"]:
         out.append(f"missing fields: {len(report['missing'])}")
+    out += [f"warning: {_one_line(w)}" for w in report["warnings"]]
     return "\n".join(out) + "\n"
 
 
