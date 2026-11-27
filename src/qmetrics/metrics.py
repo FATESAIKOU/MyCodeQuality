@@ -42,44 +42,75 @@ def parse(data):
 
 
 def depth(n, d=0):
-    # an `elif` is an If inside the parent's orelse: same depth, not one deeper
-    elifs = {id(n.orelse[0])} if isinstance(n, ast.If) and len(n.orelse) == 1 \
-        and isinstance(n.orelse[0], ast.If) else set()
+    # explicit stack, not recursion: deep expressions and long elif chains must not hit the limit
     best = d
-    for ch in ast.iter_child_nodes(n):
-        if isinstance(ch, (*FN, ast.ClassDef, ast.Lambda)):
-            continue
-        step = 1 if isinstance(ch, NEST) and id(ch) not in elifs else 0
-        best = max(best, depth(ch, d + step))
+    todo = [(n, d)]
+    while todo:
+        node, nd = todo.pop()
+        # an `elif` is an If inside the parent's orelse: same depth, not one deeper
+        elifs = {id(node.orelse[0])} if isinstance(node, ast.If) and len(node.orelse) == 1 \
+            and isinstance(node.orelse[0], ast.If) else set()
+        for ch in ast.iter_child_nodes(node):
+            if isinstance(ch, (*FN, ast.ClassDef, ast.Lambda)):
+                continue
+            step = 1 if isinstance(ch, NEST) and id(ch) not in elifs else 0
+            best = max(best, nd + step)
+            todo.append((ch, nd + step))
     return best
 
 
 def shape(fn):
     args = ast.arguments(**{f: getattr(fn.args, f) for f in fn.args._fields})
-    return ast.dump(ast.Module(body=[args] + fn.body, type_ignores=[]), include_attributes=False)
+    try:
+        return ast.dump(ast.Module(body=[args] + fn.body, type_ignores=[]), include_attributes=False)
+    except RecursionError:
+        # ast.dump recurses in CPython: a very deep body has no shape, so it is not a copy signal
+        return None
+
+
+def same_ast(a, b):
+    """Iterative structural equality: the same verdict as ast.dump(a) == ast.dump(b), no recursion."""
+    todo = [(a, b)]
+    while todo:
+        x, y = todo.pop()
+        if isinstance(x, ast.AST) or isinstance(y, ast.AST):
+            if type(x) is not type(y):
+                return False
+            todo.extend((getattr(x, f, None), getattr(y, f, None)) for f in x._fields)
+        elif isinstance(x, list) or isinstance(y, list):
+            if not (isinstance(x, list) and isinstance(y, list)) or len(x) != len(y):
+                return False
+            todo.extend(zip(x, y))
+        elif type(x) is not type(y) or repr(x) != repr(y):
+            return False
+    return True
 
 
 def funcs(tree):
     """-> {(qualname, k): (start, end, depth, shape)}; k numbers same-name defs in one scope."""
     out = {}
-
-    def walk(node, prefix):
-        seen = defaultdict(int)
-        for ch in ast.iter_child_nodes(node):
-            if isinstance(ch, FN):
-                q = prefix + ch.name
-                key = (q, seen[q])
-                seen[q] += 1
-                big = ch.end_lineno - ch.lineno + 1 >= 5  # trivial bodies are not a copy signal
-                out[key] = (ch.lineno, ch.end_lineno, depth(ch), shape(ch) if big else None)
-                walk(ch, q + ".<locals>.")
-            elif isinstance(ch, ast.ClassDef):
-                walk(ch, prefix + ch.name + ".")
-            else:
-                walk(ch, prefix)  # defs under if/try at module or class level
-
-    if tree is not None:
-        walk(tree, "")
+    # explicit stack of frames (children iterator, prefix, seen), same order as the recursive walk:
+    # each frame has its own `seen`, and a child's subtree is finished before its next sibling
+    if tree is None:
+        return out
+    todo = [(ast.iter_child_nodes(tree), "", defaultdict(int))]
+    while todo:
+        it, prefix, seen = todo[-1]
+        ch = next(it, None)
+        if ch is None:
+            todo.pop()
+        elif isinstance(ch, FN):
+            q = prefix + ch.name
+            key = (q, seen[q])
+            seen[q] += 1
+            big = ch.end_lineno - ch.lineno + 1 >= 5  # trivial bodies are not a copy signal
+            out[key] = (ch.lineno, ch.end_lineno, depth(ch), shape(ch) if big else None)
+            todo.append((ast.iter_child_nodes(ch), q + ".<locals>.", defaultdict(int)))
+        elif isinstance(ch, ast.ClassDef):
+            todo.append((ast.iter_child_nodes(ch), prefix + ch.name + ".", defaultdict(int)))
+        else:
+            # defs under if/try at module or class level
+            todo.append((ast.iter_child_nodes(ch), prefix, defaultdict(int)))
     return out
 
 
@@ -183,9 +214,7 @@ def analyze(git, base, head, src, tests):
         pa, oka = tree_of(sa) if sa else (None, True)
         if not (okb and oka):
             continue  # undetermined: no guessing, no events
-        if (pb is None) != (pa is None) or (
-                pb is not None and ast.dump(pb, include_attributes=False)
-                != ast.dump(pa, include_attributes=False)):
+        if (pb is None) != (pa is None) or (pb is not None and not same_ast(pb, pa)):
             code_change = True
         if sa is None:  # whole file deleted: every function is a changed function
             for k, (s, e, _, _) in sorted(funcs(pb).items()):
