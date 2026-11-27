@@ -61,11 +61,56 @@ def depth(n, d=0):
 
 def shape(fn):
     args = ast.arguments(**{f: getattr(fn.args, f) for f in fn.args._fields})
-    try:
-        return ast.dump(ast.Module(body=[args] + fn.body, type_ignores=[]), include_attributes=False)
-    except RecursionError:
-        # ast.dump recurses in CPython: a very deep body has no shape, so it is not a copy signal
-        return None
+    return dump(ast.Module(body=[args] + fn.body, type_ignores=[]))
+
+
+def dump(root):
+    """Iterative `ast.dump(root, include_attributes=False)` (one line).
+
+    Guarantee (what shape() relies on, and what the tests check on every version): two trees give
+    the same text here iff `ast.dump` gives the same text for them, so shape equality is AST
+    equality. The text itself equals `ast.dump` only on CPython 3.12, because the rules below copy
+    3.12's _format; other versions may format differently, and nothing else depends on the text."""
+    # the same rules as ast.dump's _format (3.12): `Name(field=value, …)` with unset fields left out
+    # (a missing attribute, or a None whose class default is None), `[a, b]` for lists, repr otherwise
+    out = []
+    todo = [("v", root)]  # ("s", text) is emitted as is; ("v", obj) is formatted when popped
+    while todo:
+        tag, x = todo.pop()
+        if tag == "s":
+            out.append(x)
+        elif isinstance(x, ast.AST):
+            fields = []
+            for name in x._fields:
+                try:
+                    value = getattr(x, name)
+                except AttributeError:
+                    continue
+                if value is None and getattr(type(x), name, ...) is None:
+                    continue
+                fields.append((name, value))
+            parts = [("s", type(x).__name__ + "(")]
+            for i, (name, value) in enumerate(fields):
+                if i:
+                    parts.append(("s", ", "))
+                parts.append(("s", name + "="))
+                parts.append(("v", value))
+            parts.append(("s", ")"))
+            todo.extend(reversed(parts))
+        elif isinstance(x, list):
+            if not x:
+                out.append("[]")
+                continue
+            parts = [("s", "[")]
+            for i, item in enumerate(x):
+                if i:
+                    parts.append(("s", ", "))
+                parts.append(("v", item))
+            parts.append(("s", "]"))
+            todo.extend(reversed(parts))
+        else:
+            out.append(repr(x))
+    return "".join(out)
 
 
 def same_ast(a, b):
@@ -87,15 +132,22 @@ def same_ast(a, b):
 
 
 def funcs(tree):
-    """-> {(qualname, k): (start, end, depth, shape)}; k numbers same-name defs in one scope."""
+    """-> {(qualname, k): (start, end, depth, shape)}; k numbers the defs with one qualname.
+
+    `seen` is shared by the whole walk and keyed by the full qualname, so every def with the
+    same qualname (whatever block or nesting level it sits in) gets the next k in pre-order:
+    `def f` at top level, `if X: def f`, and both classes `A` in an if/else each with `m`
+    give ("f", 0), ("f", 1) and ("A.m", 0), ("A.m", 1). cognitive._units numbers its keys
+    the same way."""
     out = {}
-    # explicit stack of frames (children iterator, prefix, seen), same order as the recursive walk:
-    # each frame has its own `seen`, and a child's subtree is finished before its next sibling
+    # explicit stack of (children iterator, prefix), same order as the recursive walk: a child's
+    # subtree is finished before its next sibling
     if tree is None:
         return out
-    todo = [(ast.iter_child_nodes(tree), "", defaultdict(int))]
+    seen = defaultdict(int)
+    todo = [(ast.iter_child_nodes(tree), "")]
     while todo:
-        it, prefix, seen = todo[-1]
+        it, prefix = todo[-1]
         ch = next(it, None)
         if ch is None:
             todo.pop()
@@ -105,12 +157,12 @@ def funcs(tree):
             seen[q] += 1
             big = ch.end_lineno - ch.lineno + 1 >= 5  # trivial bodies are not a copy signal
             out[key] = (ch.lineno, ch.end_lineno, depth(ch), shape(ch) if big else None)
-            todo.append((ast.iter_child_nodes(ch), q + ".<locals>.", defaultdict(int)))
+            todo.append((ast.iter_child_nodes(ch), q + ".<locals>."))
         elif isinstance(ch, ast.ClassDef):
-            todo.append((ast.iter_child_nodes(ch), prefix + ch.name + ".", defaultdict(int)))
+            todo.append((ast.iter_child_nodes(ch), prefix + ch.name + "."))
         else:
-            # defs under if/try at module or class level
-            todo.append((ast.iter_child_nodes(ch), prefix, defaultdict(int)))
+            # not a def or class: blocks (if/try/with/for/…) do not change the prefix
+            todo.append((ast.iter_child_nodes(ch), prefix))
     return out
 
 

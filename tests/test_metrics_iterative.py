@@ -9,6 +9,8 @@ import subprocess
 import sys
 import textwrap
 
+import pytest
+
 from conftest import Result
 from qmetrics import metrics
 
@@ -72,8 +74,8 @@ def test_funcs_nested_class_and_same_names():
     ]
 
 
-def test_funcs_defs_under_if_and_try_keep_head_overwrite_rule():
-    # Defs under if/try get their own `seen` counter, so the module-level f overwrites ("f", 0)
+def test_funcs_defs_under_if_and_try_are_all_counted():
+    # Defs under if/try belong to the module scope, so the four defs get k 0, 1, 2 for f and 0 for g
     src = """\
     if True:
         def f():
@@ -92,9 +94,10 @@ def test_funcs_defs_under_if_and_try_keep_head_overwrite_rule():
         return 4
     """
     assert [r[:4] for r in fn_rows(src)] == [
-        (("f", 0), 14, 15, 0),
+        (("f", 0), 2, 3, 0),
         (("f", 1), 5, 6, 0),
         (("g", 0), 9, 10, 0),
+        (("f", 2), 14, 15, 0),
     ]
 
 
@@ -148,27 +151,56 @@ def test_depth_elif_chain_is_one_level():
 
 # ---- deep inputs: must not raise RecursionError ----
 
+def dump_ref(fn):
+    # reference text: ast.dump needs a higher recursion limit for these deep bodies (the limit is
+    # restored right after)
+    args = ast.arguments(**{f: getattr(fn.args, f) for f in fn.args._fields})
+    old = sys.getrecursionlimit()
+    sys.setrecursionlimit(20000)
+    try:
+        return ast.dump(ast.Module(body=[args] + fn.body, type_ignores=[]), include_attributes=False)
+    finally:
+        sys.setrecursionlimit(old)
+
+
 def test_call_chain_900_method_is_measured():
-    rows = fn_rows(chain_src(900))
-    assert rows == [(("method_chain", 0), 1, 5, 0, True)]  # shape is None: ast.dump would overflow
+    src = chain_src(900)
+    assert fn_rows(src) == [(("method_chain", 0), 1, 5, 0, False)]  # shape is a string (#56)
+    fn = tree(src).body[0]
+    assert isinstance(metrics.shape(fn), str)
+    assert metrics.shape(fn) == metrics.shape(tree(src).body[0])  # same tree, same shape
 
 
 def test_plus_chain_900_and_elif_600_are_measured():
     plus = "def plus_chain(a):\n    x = " + " + ".join(f"v{i}" for i in range(900)) \
         + "\n    y = 1\n    z = 2\n    return x\n"
     assert fn_rows(plus) == [(("plus_chain", 0), 1, 5, 0, False)]  # ast.dump of this body still fits
-    assert fn_rows(elif_src(600)) == [(("elif_chain", 0), 1, 1202, 1, True)]
+    assert fn_rows(elif_src(600)) == [(("elif_chain", 0), 1, 1202, 1, False)]  # shape is a string (#56)
+    fn = tree(elif_src(600)).body[0]
+    assert isinstance(metrics.shape(fn), str)
+    assert metrics.shape(fn) == metrics.shape(tree(elif_src(600)).body[0])
+
+
+@pytest.mark.skipif(sys.version_info[:2] != (3, 12), reason="shape text equals ast.dump on 3.12 only")
+def test_shape_text_is_ast_dump_text_on_deep_bodies_312():
+    for src in (chain_src(900), elif_src(600)):
+        fn = tree(src).body[0]
+        assert metrics.shape(fn) == dump_ref(fn)
 
 
 def test_nested_if_90_depth():
     assert metrics.depth(tree(nested_if_src(90)).body[0]) == 90
 
 
-def test_shape_is_none_only_when_ast_dump_overflows():
+def test_shape_matches_ast_dump_on_deep_bodies():
     small = tree("def f(a):\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z\n").body[0]
     assert metrics.shape(small) is not None
     deep = tree(elif_src(600)).body[0]
-    assert metrics.shape(deep) is None
+    assert isinstance(metrics.shape(deep), str)
+    # equal ast.dump <=> equal shape, on any version: a 600-elif body and the same with one value changed
+    changed = tree(elif_src(600).replace("x == 599", "x == 598")).body[0]
+    assert metrics.shape(deep) != metrics.shape(changed)
+    assert metrics.shape(deep) == metrics.shape(tree(elif_src(600)).body[0])
 
 
 # ---- same_ast agrees with ast.dump equality ----
