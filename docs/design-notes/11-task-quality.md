@@ -237,7 +237,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `counts.long_files` | 行數 > 1000 的檔數 |
 | `counts.long_functions` | 長度（`end_lineno − lineno + 1`）> 50 的函式數 |
 | `counts.deep_functions` | 巢狀深度（`metrics.depth`）≥ 4 的函式數 |
-| `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總；函式本體深到 `ast.dump` 會遞迴爆掉的，shape 為 `None`，不計入（爆掉的門檻取決於呼叫端的堆疊深度，所以對極深的函式，這一項在不同的呼叫情境下可能不同；另案 56 處理） |
+| `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總。shape 是參數與函式本體的迭代式 dump（`metrics.dump`）。保證的是等價類：兩個函式的 shape 相等 ⇔ `ast.dump` 相等（測試在每個版本都驗這點）；文字本身只在 CPython 3.12 與 `ast.dump(…, include_attributes=False)` 逐字相同，其他版本的格式可能不同，但沒有任何東西依賴文字；不論巢狀多深都有值，不再有遞迴爆掉退成 `None` 的路（#56），所以結果不依呼叫端的堆疊深度 |
 | `counts.dup_windows` | 6 行視窗（`metrics.windows`）出現在 ≥ 2 個不同檔的**相異**視窗數 |
 | `counts.complex_functions` | 認知複雜度 > 15 的計分單位數（只含計分單位，見 `totals.cognitive_units`） |
 | `counts.dup_lines` | 相異的 (檔, 行號)：落在某個被計到的視窗（即 `dup_windows` 計的那些）裡的**有效行**（通過 `metrics.windows` 過濾的行）。同一行被多個視窗蓋到只算一次；同檔內的重複不算。與 `dup_windows` 不同，這是行數，不是視窗數 |
@@ -259,7 +259,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 
 門檻（1000、50、4、6 行、5 行）與 `diff` 的事件定義相同，所以兩個命令的數字可以對照。
 
-認知複雜度（`totals.cognitive_units`、`totals.cognitive`、`counts.complex_functions`、`ratios.complex_functions`、`complex_function` 的 findings）是自寫、只用 `ast` 的近似，規則表在 `src/qmetrics/cognitive.py` 的模組 docstring 裡（R1–R18 的編號與說明都在那裡）。它不等於 SonarQube 的數字：括號內的布林運算序列、`match` 的 case guard、lambda 與遞迴的計法與 SonarQube 不同或未計。已知差異：同名（同 qualname）的函式若分別放在不同父節點下（例如 `def f` 與 `if X:` 裡的 `def f`），鍵會碰撞，後者覆蓋前者，前者的單位被丟掉（與 `metrics.funcs` 相同；見 #31）。門檻 15 是 `> 15` 才算，放在 `src/qmetrics/repo.py`。
+認知複雜度（`totals.cognitive_units`、`totals.cognitive`、`counts.complex_functions`、`ratios.complex_functions`、`complex_function` 的 findings）是自寫、只用 `ast` 的近似，規則表在 `src/qmetrics/cognitive.py` 的模組 docstring 裡（R1–R18 的編號與說明都在那裡）。它不等於 SonarQube 的數字：括號內的布林運算序列、`match` 的 case guard、lambda 與遞迴的計法與 SonarQube 不同或未計。單位的鍵是 `(qualname, k)`：`k` 是同一個完整 qualname 的所有定義（不論在哪一層、哪個 if／try／with／for／while／match 區塊）依先序（原始碼順序）從 0 編號。所以頂層的 `def f` 與 `if X:` 裡的 `def f` 分別是 `("f", 0)` 與 `("f", 1)`；`if`／`else` 各有一個 `class A` 且各有 `m` 時是 `("A.m", 0)` 與 `("A.m", 1)`；同名 class 重定義也一樣。全部都算（#31 之前後者會覆蓋前者；#31 的第一版是每個 def／class 作用域各自編號，外層函式或 class 重複出現時，內層定義仍會被覆蓋；這次改成整次走訪共用一個計數）。`metrics.funcs` 與這裡用同一套鍵的規則（兩邊的鍵必須相同）。差異模式（`diff`）以 `(qualname, k)` 配對，所以在同名定義前面插入新定義會讓 `k` 重新編號，新定義可能被配成 `changed_function`（既有限制，#31 把範圍擴大到區塊內）。這修正會讓原本被覆蓋而漏算的定義被算到，所以 `totals.functions`、長函式、深函式、`ast_dup_functions` 與認知複雜度，在有這種寫法的 repo 上會比之前多。門檻 15 是 `> 15` 才算，放在 `src/qmetrics/repo.py`。
 
 缺值：`src` 下任一檔解析失敗 → `totals.functions`、`totals.cognitive_units`、`totals.cognitive`、`counts`、`ratios`、`findings`、`arch` 都是 `null`（沿用 diff 的 fail-closed；`files`、`lines` 不用解析，照算）。`tests` 下任一檔解析失敗 → `totals.tests` 是 `null`。失敗的檔列在 `parse_failures`（`{file, scope}`，依 (`file`, `scope`) 排序）。
 

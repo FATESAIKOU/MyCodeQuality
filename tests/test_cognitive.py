@@ -201,12 +201,12 @@ def test_C_M1_keys_are_units_with_metrics_funcs_keys():
     assert not any("<locals>" in q for q, _ in got)
 
 
-def test_C_M1_known_limitation_same_key_units_overwrite_see_issue_31():
-    # Known limitation (#31, same as metrics.funcs): two defs with the same key in different
-    # parents collide, and the later one replaces the earlier. Here f (value 6) is lost.
+def test_C_M1_same_name_defs_under_different_parents_are_all_counted():
+    # #31: the top-level f (value 6) and the f under `if a` get different keys (k 0 and 1),
+    # so neither unit is dropped
     src = ("def f(a, b, c):\n    if a:\n        if b:\n            if c:\n                pass\n"
            "if a:\n    def f():\n        pass\n")
-    assert scores(src) == {("f", 0): 0}
+    assert scores(src) == {("f", 0): 6, ("f", 1): 0}
 
 
 # ---- C-M1: long expressions must not raise RecursionError (the repo run must still exit 0) ----

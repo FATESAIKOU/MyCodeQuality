@@ -43,22 +43,24 @@ def scores(tree):
 
 
 def _units(tree):
-    # same walk as metrics.funcs, but a function's body is not entered (its nested defs belong to it)
+    # same walk and the same keys as metrics.funcs (one `seen` per walk, keyed by qualname), but a
+    # function's body is not entered: its nested defs belong to it
     out = {}
-
-    def walk(node, prefix):
-        seen = defaultdict(int)
-        for ch in ast.iter_child_nodes(node):
-            if isinstance(ch, FN):
-                q = prefix + ch.name
-                out[(q, seen[q])] = ch
-                seen[q] += 1
-            elif isinstance(ch, ast.ClassDef):
-                walk(ch, prefix + ch.name + ".")
-            else:
-                walk(ch, prefix)
-
-    walk(tree, "")
+    seen = defaultdict(int)
+    todo = [(ast.iter_child_nodes(tree), "")]
+    while todo:
+        it, prefix = todo[-1]
+        ch = next(it, None)
+        if ch is None:
+            todo.pop()
+        elif isinstance(ch, FN):
+            q = prefix + ch.name
+            out[(q, seen[q])] = ch
+            seen[q] += 1
+        elif isinstance(ch, ast.ClassDef):
+            todo.append((ast.iter_child_nodes(ch), prefix + ch.name + "."))
+        else:
+            todo.append((ast.iter_child_nodes(ch), prefix))
     return out
 
 
