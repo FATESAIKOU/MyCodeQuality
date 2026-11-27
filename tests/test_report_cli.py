@@ -673,7 +673,7 @@ def test_c_p13_new_metric_keys_leave_index_shape_alone(capsys, tmp_path):
     old = write_json(tmp_path / "old" / "qmetrics-repo.json", {"kind": "qmetrics-repo", "schema_version": 1, "tool_version": "0.3.0"})
     new = write_json(
         tmp_path / "new" / "qmetrics-repo.json",
-        {"kind": "qmetrics-repo", "schema_version": 1, "tool_version": "0.4.1", "arch": {"modules": 3}, "totals": {"cognitive": 7}},
+        {"kind": "qmetrics-repo", "schema_version": 1, "tool_version": "0.4.2", "arch": {"modules": 3}, "totals": {"cognitive": 7}},
     )
     indexes = []
     for label, path in (("old", old), ("new", new)):
