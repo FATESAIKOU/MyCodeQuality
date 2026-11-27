@@ -237,7 +237,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 | `counts.long_files` | 行數 > 1000 的檔數 |
 | `counts.long_functions` | 長度（`end_lineno − lineno + 1`）> 50 的函式數 |
 | `counts.deep_functions` | 巢狀深度（`metrics.depth`）≥ 4 的函式數 |
-| `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總 |
+| `counts.ast_dup_functions` | 依 `metrics.shape`（只看 ≥ 5 行的函式）分組，每組大小 ≥ 2 時記「大小 − 1」，加總；函式本體深到 `ast.dump` 會遞迴爆掉的，shape 為 `None`，不計入（爆掉的門檻取決於呼叫端的堆疊深度，所以對極深的函式，這一項在不同的呼叫情境下可能不同；另案 56 處理） |
 | `counts.dup_windows` | 6 行視窗（`metrics.windows`）出現在 ≥ 2 個不同檔的**相異**視窗數 |
 | `counts.complex_functions` | 認知複雜度 > 15 的計分單位數（只含計分單位，見 `totals.cognitive_units`） |
 | `counts.dup_lines` | 相異的 (檔, 行號)：落在某個被計到的視窗（即 `dup_windows` 計的那些）裡的**有效行**（通過 `metrics.windows` 過濾的行）。同一行被多個視窗蓋到只算一次；同檔內的重複不算。與 `dup_windows` 不同，這是行數，不是視窗數 |
