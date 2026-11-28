@@ -99,3 +99,20 @@ def test_installed_console_script_runs_when_installed(tmp_path):
     exe = str(script) if script.exists() else shutil.which("mcq-weekly")
     proc = subprocess.run([exe, "--help"], capture_output=True, text=True)
     assert proc.returncode == 0 and "select" in proc.stdout
+
+
+@pytest.mark.parametrize("text", ["[]", "null", '"text"', "3"])
+def test_non_object_repos_and_population_json_are_usage_errors(tmp_path, text):
+    from mcqweekly.run import load_population
+
+    repos = tmp_path / "r.json"
+    repos.write_text(text, encoding="utf-8")
+    with pytest.raises(TOOL_ERRORS) as err:
+        load_repos(str(repos))
+    assert err.value.code == "bad_repos"
+
+    pop = tmp_path / "p.json"
+    pop.write_text(text, encoding="utf-8")
+    with pytest.raises(TOOL_ERRORS) as err:
+        load_population(str(pop))
+    assert err.value.code == "bad_population"

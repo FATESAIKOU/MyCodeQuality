@@ -63,6 +63,7 @@ def test_offline_never_calls_runner(tmp_path):
     run = read_run(work, "001")
     assert run["failed"] == [{"ticket": T1, "stage": "fetch", "code": "offline_missing"}]
     assert run["gh_calls"] == 0
+    assert run["exit_code"] == 3
     assert out_current(work) == "runs/001"
 
 
@@ -72,7 +73,9 @@ def test_online_then_reuse_without_gh(tmp_path):
     first = GraphqlRunner()
     assert run_main(pop, work, first) == 0
     assert read_run(work, "001")["fetched"] == 1
-    assert read_run(work, "001")["api_pages"] == 2  # timeline + label queries, one page each
+    assert read_run(work, "001")["gh_api_calls"] == 2  # timeline + label queries
+    assert read_run(work, "001")["api_pages"] is None  # not measurable: fetch paginates internally
+    assert read_run(work, "001")["exit_code"] == 0
 
     assert run_main(pop, work, no_gh_runner) == 0  # reuse: the runner must not be called
     run = read_run(work, "002")
@@ -285,7 +288,8 @@ def test_rate_limit_waits_and_api_pages_are_recorded(tmp_path):
     assert run_main(pop, work, GraphqlRunner(first_rate_limited=True), sleeper=waits.append) == 0
     run = read_run(work, "001")
     assert run["rate_limit_waits"] == 1 and waits == [1]
-    assert run["api_pages"] == 3  # the 429 attempt counts as a request
+    assert run["gh_api_calls"] == 3  # the 429 attempt counts as a call
+    assert run["api_pages"] is None
 
 
 def test_incomplete_reasons_are_totally_ordered_and_deduplicated():
@@ -370,3 +374,92 @@ def test_failure_while_switching_out_json_keeps_previous_pointer(tmp_path, monke
 def test_offline_and_refetch_are_mutually_exclusive_exit_2(tmp_path):
     pop = pop_file(tmp_path)
     assert run_main(pop, tmp_path / "w", no_gh_runner, extra=["--offline", "--refetch"]) == 2
+
+
+class CrossRepoRunner:
+    """Ticket acme/alpha#1 has a timeline with a PR in acme/beta (listed) and one in acme/gamma (not listed)."""
+
+    def __init__(self):
+        self.calls = []
+        timeline = {"data": {"repository": {"issue": {"timelineItems": {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "nodes": [
+                {"__typename": "ConnectedEvent", "subject": {"__typename": "PullRequest", "number": 7,
+                                                              "repository": {"nameWithOwner": "acme/beta"}}},
+                {"__typename": "CrossReferencedEvent", "source": {"__typename": "PullRequest", "number": 8,
+                                                                  "repository": {"nameWithOwner": "acme/gamma"}}},
+            ],
+        }}}}}
+        self.timeline = json.dumps(timeline)
+        self.pr7 = json.dumps({"id": 700, "number": 7, "title": "Beta fix", "body": "Closes acme/alpha#1",
+                               "state": "closed", "draft": False, "created_at": "2030-01-02T03:00:00Z",
+                               "merged_at": "2030-01-02T05:00:00Z", "closed_at": "2030-01-02T05:00:00Z",
+                               "head": {"sha": "1" * 40, "ref": "beta-fix"}, "merge_commit_sha": "2" * 40})
+
+    def __call__(self, argv):
+        self.calls.append(argv)
+        cmd = " ".join(argv)
+        if "/repos/acme/gamma/" in cmd:
+            raise AssertionError("a PR outside the population repos must not be fetched")
+        if "graphql" in argv:
+            return self.timeline, "", 0
+        if "/repos/acme/beta/pulls/7" in cmd and "--paginate" not in argv:
+            return self.pr7, "", 0
+        if "/repos/acme/beta/actions/runs" in cmd:
+            return json.dumps({"workflow_runs": []}), "", 0
+        if any(p in cmd for p in ("/repos/acme/beta/issues/7/comments", "/repos/acme/beta/pulls/7/reviews",
+                                  "/repos/acme/beta/pulls/7/commits")):
+            return "[]", "", 0
+        raise AssertionError(f"unhandled mock gh call: {argv}")
+
+
+def test_cross_repo_pr_in_listed_repo_is_kept_and_unlisted_repo_is_dropped(tmp_path):
+    pop = pop_file(tmp_path, tickets=(T1,), repos=(R1, R2))
+    work = tmp_path / "w"
+    assert run_main(pop, work, CrossRepoRunner()) == 0
+    snap = json.loads((work / "snapshots" / "acme__alpha__1.json").read_text(encoding="utf-8"))
+    ids = [pr["id"] for pr in snap["prs"]]
+    assert f"{R2}#7" in ids
+    assert not any("acme/gamma" in pid for pid in ids)
+
+
+MIXED_REASONS = [
+    {"ticket": "acme/c#1", "reason": "fetch:offline_missing"},
+    {"repo": "Zed/b", "reason": "list_failed"},
+    {"repo": "acme/c", "reason": "truncated"},
+    {"repo": "acme/A", "reason": "truncated"},
+    {"ticket": "acme/a#2", "reason": "score:x"},
+    {"repo": "Zed/b", "reason": "list_failed"},
+]
+CANONICAL_REASONS = [
+    {"repo": "acme/A", "reason": "truncated"},
+    {"repo": "acme/c", "reason": "truncated"},
+    {"repo": "Zed/b", "reason": "list_failed"},
+    {"ticket": "acme/a#2", "reason": "score:x"},
+    {"ticket": "acme/c#1", "reason": "fetch:offline_missing"},
+]
+
+
+def test_real_build_table_orders_mixed_reasons_canonically_whatever_the_input_order():
+    from mcqreport import table as mcq_table
+
+    window = {"from": FROM, "to": TO}
+    forward = mcq_table.build_table([], window, incomplete_reasons=MIXED_REASONS)
+    backward = mcq_table.build_table([], window, incomplete_reasons=list(reversed(MIXED_REASONS)))
+    assert forward["incomplete_reasons"] == CANONICAL_REASONS
+    assert forward["incomplete"] is True
+    assert json.dumps(forward, sort_keys=True) == json.dumps(backward, sort_keys=True)
+
+
+def test_run_table_bytes_do_not_depend_on_repo_order_with_mixed_reasons(tmp_path):
+    work = tmp_path / "w"
+    pop_a = write_population(tmp_path / "a.json", ["Zed/b", "acme/c"], [ticket_row("acme/c#1")],
+                             statuses={"Zed/b": "list_failed", "acme/c": "truncated"})
+    pop_b = write_population(tmp_path / "b.json", ["acme/c", "Zed/b"], [ticket_row("acme/c#1")],
+                             statuses={"Zed/b": "list_failed", "acme/c": "truncated"})
+    assert run_main(pop_a, work, no_gh_runner, extra=["--offline"]) == 3
+    assert run_main(pop_b, work, no_gh_runner, extra=["--offline"]) == 3
+    assert (work / "runs" / "001" / "table.json").read_bytes() == (work / "runs" / "002" / "table.json").read_bytes()
+    table = json.loads((work / "runs" / "001" / "table.json").read_text(encoding="utf-8"))
+    assert table["incomplete_reasons"][0] == {"repo": "acme/c", "reason": "truncated"}
+    assert table["incomplete_reasons"][-1] == {"ticket": "acme/c#1", "reason": "fetch:offline_missing"}

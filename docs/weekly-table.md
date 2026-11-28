@@ -88,7 +88,7 @@ mcq-report table --reports <目錄> --from <UTC> --to <UTC> [--population <popul
 
 - **`closed_at`（每列）**：UTC 字串或 `null`。由 `--population <population.json>` 提供，格式為 #63 產出的 `{"kind": "mcq-weekly-population", "schema_version": 1, ..., "tickets": [{"ticket", "closed_at", "level"}]}`。本單只讀 `tickets[].ticket` 與 `tickets[].closed_at`；`kind` 不符 → exit 2。沒給 population，或單不在 population 裡 → `null`。
 - **`flags`（頂層）**：見 §1.4。
-- **`incomplete`、`incomplete_reasons`（頂層，一律有）**：`incomplete` 為布林；`incomplete_reasons` 為 `[{"repo" 或 "ticket": ..., "reason": ...}]`，依 repo（或 ticket）與 reason 排序。單獨跑 `mcq-report table` 一律是 `false` 與 `[]`。#63 驅動會帶入 reasons：有任一項 → `incomplete` 為 `true`。
+- **`incomplete`、`incomplete_reasons`（頂層，一律有）**：`incomplete` 為布林；`incomplete_reasons` 為 `[{"repo" 或 "ticket": ..., "reason": ...}]`，排序為全序：repo 項在前、ticket 項在後，同類內依小寫名稱（repo 或 ticket）再依 reason；完全相同的項目去重。單獨跑 `mcq-report table` 一律是 `false` 與 `[]`。#63 驅動會帶入 reasons：有任一項 → `incomplete` 為 `true`。
 - `window` 鍵維持 `{"from", "to"}`。
 
 ## 程式介面（給 #63）

@@ -11,11 +11,11 @@ R1 = "acme/alpha"
 R2 = "acme/beta"
 
 
-def run_select(tmp_path, repos, by_repo, max_tickets=None, name="population.json"):
+def run_select(tmp_path, repos, by_repo, max_tickets=None, name="population.json", as_of="2026-11-28T06:00:00Z"):
     repos_file = write_repos(tmp_path / "repos.json", repos)
     out = tmp_path / name
     argv = ["select", "--repos", str(repos_file), "--from", FROM, "--to", TO,
-            "--as-of", "2026-11-28T06:00:00Z", "--out", str(out)]
+            "--as-of", as_of, "--out", str(out)]
     if max_tickets is not None:
         argv += ["--max-tickets", str(max_tickets)]
     runner = list_runner(by_repo)
@@ -111,3 +111,13 @@ def test_bad_repos_file_and_bad_window_exit_2(tmp_path):
     good = write_repos(tmp_path / "good.json", [R1])
     argv = ["select", "--repos", str(good), "--from", TO, "--to", FROM, "--as-of", TO, "--out", str(tmp_path / "o.json")]
     assert main(argv, runner=list_runner({})) == 2
+
+
+def test_as_of_is_a_marker_and_does_not_change_the_selection(tmp_path):
+    rows = [issue_row(1, "2026-11-22T10:00:00Z"), issue_row(2, "2026-11-23T10:00:00Z", ("bug",))]
+    code_a, pop_a, _ = run_select(tmp_path, [R1], {R1: rows}, as_of="2026-11-28T06:00:00Z", name="a.json")
+    code_b, pop_b, _ = run_select(tmp_path, [R1], {R1: rows}, as_of="2020-01-01T00:00:00Z", name="b.json")
+    assert code_a == code_b == 0
+    assert pop_a["tickets"] == pop_b["tickets"]
+    assert pop_a["repos"] == pop_b["repos"]
+    assert pop_a["as_of"] != pop_b["as_of"]

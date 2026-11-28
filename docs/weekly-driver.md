@@ -60,7 +60,7 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 
 ## 決定性契約
 
-同一份母體＋快照＋成本匯出＋tool_version → `reports/*`、`table.json`、`table.md` 位元組相同。`run.json` 是診斷，不在契約內（它記 fetched／reused、gh 命令數、`api_pages`、`rate_limit_waits`、耗時以外的計數）。所有 JSON 以 `sort_keys`、縮排 2、UTF-8、結尾一個換行序列化；排序：repo 依小寫名稱，ticket 依 (repo 小寫, 號碼)，failed 依 (ticket, stage, code)，`incomplete_reasons` 依 (repo 先、ticket 後, 小寫名稱, reason)，完全相同的項目去重。
+同一份母體＋快照＋成本匯出＋tool_version → `reports/*`、`table.json`、`table.md` 位元組相同。`run.json` 是診斷，不在契約內（它記 fetched／reused、gh 命令數、`gh_api_calls`、`rate_limit_waits`、耗時以外的計數）。所有 JSON 以 `sort_keys`、縮排 2、UTF-8、結尾一個換行序列化；排序：repo 依小寫名稱，ticket 依 (repo 小寫, 號碼)，failed 依 (ticket, stage, code)，`incomplete_reasons` 依 (repo 項先、ticket 項後, 小寫名稱, reason)，完全相同的項目去重（由 `mcqreport.table.build_table` 執行）。
 
 ## 版本
 
@@ -87,4 +87,4 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 
 ## 效能紀錄
 
-`run.json` 記 `gh_calls`（run 階段所有 gh 呼叫）、`api_pages`（只計 `gh api` 呼叫，每次一頁，因為不用 `--paginate`；`select` 的 `gh issue list` 不計入）、`rate_limit_waits`（taskquality 的重試等待次數）、`tickets`、`prs`、`exit_code`。端到端時間由呼叫端量測。10 分鐘是試跑的量測目標，不是保證。
+`run.json` 記 `gh_calls`（run 階段所有 gh 呼叫）、`gh_api_calls`（其中 `gh api` 的呼叫次數；`select` 的 `gh issue list` 不計入）、`api_pages`（一律 `null`）、`rate_limit_waits`（taskquality 的重試等待次數）、`tickets`、`prs`、`exit_code`。`api_pages` 記 null 的原因：taskquality 的 fetch 對 comments、reviews、commits、actions runs 使用 `gh api --paginate`，一次呼叫可能發出多頁請求，而 gh 不回報頁數，所以拿不到真實頁數。端到端時間由呼叫端量測。10 分鐘是試跑的量測目標，不是保證。

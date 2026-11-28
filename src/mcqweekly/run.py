@@ -26,17 +26,20 @@ LEVELS = {"c", "d"}
 
 
 class Counting:
-    """Wraps the gh runner: counts invocations and `gh api` requests (no --paginate is used, so one call is one page)."""
+    """Wraps the gh runner: counts every gh invocation (`gh_calls`) and every `gh api` invocation (`gh_api_calls`).
+
+    A `gh api` invocation is not a page count: taskquality's fetch uses `--paginate` for comments, reviews, commits and runs,
+    so one call can fetch many pages and the wrapper cannot see them. run.json therefore records api_pages as null."""
 
     def __init__(self, inner: Callable[[list[str]], Any]):
         self.inner = inner
         self.gh_calls = 0
-        self.api_pages = 0
+        self.gh_api_calls = 0
 
     def __call__(self, argv: list[str]):
         self.gh_calls += 1
         if argv[:2] == ["gh", "api"]:
-            self.api_pages += 1
+            self.gh_api_calls += 1
         return self.inner(argv)
 
 
@@ -63,6 +66,8 @@ def snapshot_name(ticket: str) -> str:
 
 def load_population(path: str) -> dict:
     data = read_json_file(path, "population")
+    if not isinstance(data, dict):
+        raise ToolError("bad_population", "population file must be a JSON object")
     if data.get("kind") != "mcq-weekly-population" or not is_v1(data.get("schema_version")):
         raise ToolError("bad_population", "population must have kind='mcq-weekly-population' and schema_version=1")
     if data.get("rules") != RULES:
@@ -279,7 +284,8 @@ def run_weekly(
         "failed": failed,
         "prs": prs,
         "gh_calls": counting.gh_calls,
-        "api_pages": counting.api_pages,
+        "api_pages": None,  # unknown: fetch uses gh api --paginate (see gh_api_calls)
+        "gh_api_calls": counting.gh_api_calls,
         "rate_limit_waits": sleep_count.waits,
         "exit_code": exit_code,
     }

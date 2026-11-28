@@ -36,6 +36,8 @@ def canonical_repos(repos: list[str]) -> list[str]:
 
 def load_repos(path: str) -> list[str]:
     data = read_json_file(path, "repos")
+    if not isinstance(data, dict):
+        raise ToolError("bad_repos", "repos file must be a JSON object")
     if data.get("kind") != "mcq-weekly-repos" or not is_v1(data.get("schema_version")):
         raise ToolError("bad_repos", "repos file must have kind='mcq-weekly-repos' and schema_version=1")
     repos = data.get("repos")
