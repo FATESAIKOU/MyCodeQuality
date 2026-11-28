@@ -27,7 +27,7 @@ The workflow checks out the full history (`fetch-depth: 0`; a shallow clone is a
 
 ## Task quality (`taskquality`)
 
-`taskquality fetch` writes a ticket snapshot (including `ticket_labels`, the ticket's labeled/unlabeled events, no actors); `taskquality score` turns it into metrics. Config v2 adds two optional keys: `started_label` (start the cycle at the first `labeled` event of that label) and `ci_required` (`false` stops requiring CI for `clean`). A config with `schema_version: 1` that contains either key is rejected with `config_bad_shape`, by design. Review line parsing isolates post-merge verdicts and structure notes, and warns on unparsed verdict-like lines. Details: [docs/taskquality.md](docs/taskquality.md).
+`taskquality fetch` writes a ticket snapshot (including `ticket_labels`, the ticket's labeled/unlabeled events, no actors); `taskquality score` turns it into metrics. Config v2 adds two optional keys: `started_label` (start the cycle at the first `labeled` event of that label) and `ci_required` (`false` stops requiring CI for `clean`). A config with `schema_version: 1` that contains either key is rejected with `config_bad_shape`, by design. Review line parsing isolates post-merge verdicts and structure notes, and warns on unparsed verdict-like lines. Details: [docs/taskquality.md](docs/taskquality.md), [docs/review-lines.md](docs/review-lines.md).
 
 ### Release note（草稿）
 內建 `verdict_pattern` 改變（模型後可接一個全形括號註記），內建 `config_digest` 換新值，新舊報告的 `config_digest` 不可直接比；使用自訂 config 的使用方 pattern 不會自動更新。
