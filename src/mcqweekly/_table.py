@@ -1,17 +1,13 @@
-"""Interface layer to mcqreport.table (#62). Not merged yet: until then the real table is missing and callers inject a fake.
+"""Interface to mcqreport.table (#62): the weekly table builder and its markdown renderer.
 
-Contract used here: build_table(reports, window, closed_at=None, incomplete_reasons=None) -> dict
-and render_md(table) -> str. If #62 renames anything, change it here and nowhere else.
+build_table(reports, window, closed_at=None, incomplete_reasons=None) -> dict and render_md(table) -> str.
+`run_weekly` takes the module's two functions as a namespace, so tests can inject a fake without touching this file.
 """
 
 from types import SimpleNamespace
 
-from mcqreport.common import ToolError
+from mcqreport import table as mcq_table
 
 
 def load_table_api():
-    try:
-        from mcqreport import table as mod
-    except ImportError as e:
-        raise ToolError("table_unavailable", "mcqreport.table is not available (#62 not merged)") from e
-    return SimpleNamespace(build_table=mod.build_table, render_md=mod.render_md)
+    return SimpleNamespace(build_table=mcq_table.build_table, render_md=mcq_table.render_md)

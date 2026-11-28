@@ -257,9 +257,7 @@ def run_weekly(
             closed_at=closed_at,
             incomplete_reasons=reasons,
         )
-        table["incomplete"] = bool(reasons)
-        table["incomplete_reasons"] = reasons
-        table["failed_tickets"] = failed
+        table["failed_tickets"] = failed  # driver key (docs/weekly-driver.md); incomplete and incomplete_reasons come from build_table
         md = table_api.render_md(table)
     except Exception as e:
         raise ToolError("table_failed", f"table step failed: {type(e).__name__}") from None

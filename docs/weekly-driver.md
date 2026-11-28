@@ -83,7 +83,7 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 
 ## table 介面（#62）
 
-`src/mcqweekly/_table.py` 是介面層：呼叫 `mcqreport.table.build_table(reports, window, closed_at=None, incomplete_reasons=None) -> dict` 與 `render_md(table) -> str`。`mcqreport.table` 不存在時（#62 未合併）`run` 以 exit 2（`table_unavailable`）結束；測試以假 table 注入。
+`src/mcqweekly/_table.py` 直接使用 `mcqreport.table`：`build_table(reports, window, closed_at=None, incomplete_reasons=None) -> dict` 與 `render_md(table) -> str`。`incomplete_reasons` 由驅動傳入，`incomplete`／`incomplete_reasons` 由 `build_table` 產生，驅動不事後覆寫。`failed_tickets` 是驅動加的頂層鍵（單與 stage、code 的失敗清單，依 (ticket, stage, code) 排序）。table.md 不完整時，結尾的註記是驅動加在 `render_md` 之後的一行。測試以 `table_api` 參數注入假函式。
 
 ## 效能紀錄
 

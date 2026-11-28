@@ -5,6 +5,7 @@ import os
 import stat
 
 import mcqweekly.run as run_mod
+from types import SimpleNamespace
 from mcqreport.common import ToolError
 from mcqweekly.cli import main
 from mcqweekly.run import incomplete_reasons
@@ -313,11 +314,29 @@ def test_one_ticket_outside_population_repos_is_usage_error(tmp_path):
     assert run_main(pop, tmp_path / "w", no_gh_runner, extra=["--offline"]) == 2
 
 
-def test_table_module_missing_is_exit_2_with_one_line_error(tmp_path, capsys):
+def test_default_table_is_the_real_mcqreport_table(tmp_path):
     pop = pop_file(tmp_path)
-    argv = ["run", "--population", str(pop), "--work", str(tmp_path / "w"), "--offline"]
-    assert main(argv, runner=no_gh_runner) == 2
-    assert "table_unavailable" in capsys.readouterr().err
+    work = tmp_path / "w"
+    assert main(["run", "--population", str(pop), "--work", str(work), "--offline"], runner=no_gh_runner) == 3
+    table = json.loads((work / "runs" / "001" / "table.json").read_text(encoding="utf-8"))
+    assert table["kind"] == "mcq-weekly-table"
+    assert table["incomplete"] is True
+    assert table["incomplete_reasons"] == [{"ticket": T1, "reason": "fetch:offline_missing"}]
+    assert table["failed_tickets"] == [{"ticket": T1, "stage": "fetch", "code": "offline_missing"}]
+
+
+def test_incomplete_reasons_are_passed_into_build_table(tmp_path):
+    pop = pop_file(tmp_path, tickets=(T1,), repos=(R1, R2), statuses={R2: "list_failed"})
+    seen = {}
+    real = fake_table_api()
+
+    def spy(reports, window, closed_at=None, incomplete_reasons=None):
+        seen["reasons"] = incomplete_reasons
+        return real.build_table(reports, window, closed_at=closed_at, incomplete_reasons=incomplete_reasons)
+
+    api = SimpleNamespace(build_table=spy, render_md=real.render_md)
+    assert run_main(pop, tmp_path / "w", GraphqlRunner(), table_api=api) == 3
+    assert seen["reasons"] == [{"repo": R2, "reason": "list_failed"}]
 
 
 def test_no_pr_text_in_stderr(tmp_path, capsys):
