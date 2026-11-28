@@ -715,6 +715,48 @@
       "unparsed": false,
       "nonstandard": false,
       "structure_note": false
+    },
+    {
+      "id": "markdown-bold-whole-line",
+      "line": "**審查：vendor/model-x 結論：可以 merge（head 4cac21d）**",
+      "parsed": true,
+      "role": "**審查",
+      "model": "vendor/model-x",
+      "note": null,
+      "verdict_class": "pass",
+      "head": "4cac21d",
+      "counts_as_review": false,
+      "unparsed": false,
+      "nonstandard": false,
+      "structure_note": false
+    },
+    {
+      "id": "markdown-quote-no-space",
+      "line": ">審查：vendor/model-x 結論：可以 merge（head 4cac21d）",
+      "parsed": true,
+      "role": ">審查",
+      "model": "vendor/model-x",
+      "note": null,
+      "verdict_class": "pass",
+      "head": "4cac21d",
+      "counts_as_review": false,
+      "unparsed": false,
+      "nonstandard": false,
+      "structure_note": false
+    },
+    {
+      "id": "model-conclusion-two-spaces",
+      "line": "審查：vendor/model-x  結論：可以 merge（head 4cac21d）",
+      "parsed": false,
+      "role": null,
+      "model": null,
+      "note": null,
+      "verdict_class": null,
+      "head": null,
+      "counts_as_review": false,
+      "unparsed": true,
+      "nonstandard": false,
+      "structure_note": false
     }
   ]
 }

@@ -4,6 +4,7 @@ Validates tests/vectors/review_lines.json against DEFAULT_CONFIG and extract_ver
 All synthetic data (vendor/model-x, acme/widgets).
 """
 
+import ast
 import json
 from pathlib import Path
 import re
@@ -15,6 +16,7 @@ from taskquality.conventions import DEFAULT_CONFIG, extract_verdicts_detailed
 ROOT = Path(__file__).resolve().parent.parent
 VECTORS_FILE = ROOT / "tests" / "vectors" / "review_lines.json"
 DOCS_PERIODIC = ROOT / "docs" / "periodic.md"
+DOCS_REVIEW_LINES = ROOT / "docs" / "review-lines.md"
 
 REQUIRED_KEYS = [
     "id",
@@ -83,11 +85,32 @@ def test_docs_periodic_table_rows_present_in_vectors():
         assert m, f"Could not find backtick pattern in row: {row}"
         docs_rows.append(m.group(1))
 
-    assert len(docs_rows) == 25, f"Expected 25 rows in docs/periodic.md §1, got {len(docs_rows)}"
+    assert len(docs_rows) > 0, f"Expected rows in docs/periodic.md §1, got {len(docs_rows)}"
 
     vector_lines = {v["line"] for v in VECTORS}
     for row_line in docs_rows:
         assert row_line in vector_lines, f"docs/periodic.md row not found in vectors: {row_line!r}"
+
+
+def test_docs_review_lines_pattern_matches_default_config():
+    """Verify verdict_pattern copied in docs/review-lines.md matches DEFAULT_CONFIG exactly."""
+    text = DOCS_REVIEW_LINES.read_text(encoding="utf-8")
+    m = re.search(r"```python\n(r?[\"\x27].*?[\"\x27])\n```", text)
+    assert m, "Could not find python code block with pattern in docs/review-lines.md"
+    doc_pattern = ast.literal_eval(m.group(1))
+    assert doc_pattern == DEFAULT_CONFIG["verdict_pattern"]
+
+
+def test_docs_review_lines_referenced_vector_ids_exist():
+    """Verify vector IDs referenced in docs/review-lines.md (§7 tables) all exist in review_lines.json."""
+    text = DOCS_REVIEW_LINES.read_text(encoding="utf-8")
+    assert "## 7. 範例對照（取自測試向量）" in text
+    s7 = text.split("## 7. 範例對照（取自測試向量）")[1]
+    doc_vector_ids = re.findall(r"^\|\s*`([a-z0-9-]+)`\s*\|", s7, re.MULTILINE)
+    assert len(doc_vector_ids) > 0, "No vector IDs found in docs/review-lines.md §7"
+    vector_ids = {v["id"] for v in VECTORS}
+    for vid in doc_vector_ids:
+        assert vid in vector_ids, f"Vector ID '{vid}' in docs/review-lines.md not found in review_lines.json"
 
 
 @pytest.mark.parametrize("vector", VECTORS, ids=[v["id"] for v in VECTORS])

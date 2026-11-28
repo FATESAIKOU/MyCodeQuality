@@ -8,7 +8,7 @@
 
 ## 1. 文法與 Pattern 逐欄說明
 
-審查行必須位於 PR 留言的**第一行**（`first_line`），行首不得有任何空白字元或 Markdown 語法（例如粗體 `**` 或引用 `>`）。
+審查行必須位於 PR 留言的**第一行**（`first_line`）。行首若有空白字元，或「審查」前面黏著 Markdown 語法等標記（例如粗體 `**` 或引用 `>`），會讓整行無法匹配或導致解析出的 `role` 不是「審查」而不計入一般審查指標；具體行為以測試向量為準。
 
 內建標準比對模式（`DEFAULT_CONFIG["verdict_pattern"]`）：
 
@@ -20,7 +20,7 @@ r"^(?P<role>\S*審查)：(?P<model>[^\s（）]+)(?:（(?P<note>[^）]*)）)? 結
 
 | 段落 | 正規表示式群組 / 字元 | 說明 |
 |---|---|---|
-| 行首錨點 | `^` | 嚴格比對行首，行首有空白（如 ` 審查：...`）或 Markdown 標記將無法匹配。 |
+| 行首錨點 | `^` | 嚴格比對行首。行首有空白（如 ` 審查：...`）或「審查」前面黏著標記，會讓整行不匹配或使 `role` 帶著標記（如 `**審查`、`>審查`）而非預設角色，因而無法計入審查指標；具體以向量為準。 |
 | 審查角色 | `(?P<role>\S*審查)` | 角色名稱，由零或多個非空白字元接「審查」結尾（例如 `審查`、`結構審查`、`安全審查`）。 |
 | 角色冒號 | `：` | 必須使用**全形冒號**。半形冒號 `:` 視為不匹配。 |
 | 模型名稱 | `(?P<model>[^\s（）]+)` | 模型識別字串（如 `vendor/model-x`）。不可包含空白（半形或全形）或全形括號 `（` `）`。半形括號 `()` 會被視為 model 名稱的一部分。若模型名稱含空白（如 `Vendor Model X (Medium)`）將無法匹配。 |
@@ -73,11 +73,11 @@ r"^(?P<role>\S*審查)：(?P<model>[^\s（）]+)(?:（(?P<note>[^）]*)）)? 結
 9. `counts_as_review`（布林值，必填）：是否計入一般審查指標序列。
    - 判定條件：`parsed` 為真 ∧ `role` 屬於 `review_roles`（內建預設為 `["審查"]`）∧ 未因註記規則（含「架構／結構」）被排除。
 10. `unparsed`（布林值，必填）：看似審查行但無法解析。
-    - 判定條件：`not parsed` 且開頭符合 `^\S*審查：`。此類留言在系統中會計入 `unparsed_verdict_lines` 警示計數。
+    - 判定條件：`not parsed` 且開頭符合 `^\S*審查：`。此類留言在系統中會計入 `unparsed_verdict_lines` 警示計數。注意此計數不受 `merged_at` 時間限制影響（合併後才貼的行亦計）。
 11. `nonstandard`（布林值，必填）：是否為容忍但非標準之審查行。
-    - 判定條件：`counts_as_review` 為真 ∧ head 後緊接全形分號 `；` 或半形分號 `;`。計入 `nonstandard_verdict_lines`。
+    - 判定條件：`counts_as_review` 為真 ∧ head 後緊接全形分號 `；` 或半形分號 `;`。計入 `nonstandard_verdict_lines`。注意此計數不受 `merged_at` 時間限制影響（合併後才貼的行亦計）。
 12. `structure_note`（布林值，必填）：是否因舊式註記規則被排除出一般審查。
-    - 判定條件：`parsed` 為真 ∧ `role` 屬於 `review_roles` ∧ `note` 中包含「架構」或「結構」字樣。計入 `structure_note_verdicts`。
+    - 判定條件：`parsed` 為真 ∧ `role` 屬於 `review_roles` ∧ `note` 中包含「架構」或「結構」字樣。計入 `structure_note_verdicts`。注意此計數不受 `merged_at` 時間限制影響（合併後才貼的行亦計）。
 
 ---
 
@@ -110,12 +110,17 @@ r"^(?P<role>\S*審查)：(?P<model>[^\s（）]+)(?:（(?P<note>[^）]*)）)? 結
 - **只採計合併前**：審查結論序列僅包含留言時間 `at ≤ merged_at` 的審查行（同一秒算在內）。
 - **合併後審查分離**：若審查行貼出的時間 `at > merged_at`，不納入一般結論序列，改計入 `post_merge_verdicts`。
 - **指標隔離**：合併後的審查行不會影響一次通過（`first_review_pass`）、修復輪數（`fix_rounds`）、重審次數（`re_reviews`）、`approved_head_stale` 或未審先合（`unreviewed_merged_prs`）之計算。
+- **計數獨立（不受 merged_at 影響）**：`unparsed`、`nonstandard`、`structure_note` 這三個計數不受 `merged_at` 影響（PR 合併後才貼的審查行若符合條件，仍會計入 `unparsed_verdict_lines`、`nonstandard_verdict_lines`、`structure_note_verdicts`），只有審查結論序列（`verdicts`）與相關審查指標受 §4 時間過濾影響。
 
 ---
 
 ## 5. 合併閘門用法（Gate Criteria）
 
-CI 閘門或自動化合併工具判定「審查是否可以放行」時，必須嚴格同時滿足以下三個條件：
+本節判定公式定義的是「**單一審查行是不是通過行**」。
+
+PR 能不能放行，另需依閘門自身規則綜合判定：必須取最新一輪審查、該行之 `head` 必須等於 PR 目前最新的 head（避免使用舊 commit SHA 通過的過期審查放行，即 `approved_head_stale` 規則），且已合併 PR 只採計留言時間 `at ≤ merged_at` 的審查行（詳見 §4）。
+
+在單一審查行層級，CI 閘門或自動化工具判定該行是否為放行通過行時，必須嚴格同時滿足以下三個條件：
 
 $$\text{可以放行} \iff \text{parsed} \land (\text{verdict\_class} == \text{"pass"}) \land \text{counts\_as\_review}$$
 
@@ -159,6 +164,8 @@ $$\text{可以放行} \iff \text{parsed} \land (\text{verdict\_class} == \text{"
 | `periodic-row-08-arch-review-role` | `結構審查：vendor/model-z 結論：通過（head 7c3e45b）` | false | 角色為「結構審查」，不計入一般審查指標 |
 | `structure-note-arch-struct` | `審查：vendor/model-x（架構師結構審） 結論：通過（head 1234567）` | true | 舊式註記含「架構／結構」排除 |
 | `structure-note-arch-only` | `審查：vendor/model-x（架構師） 結論：通過（head 1234567）` | true | 舊式註記含「架構」排除 |
+| `markdown-bold-whole-line` | `**審查：vendor/model-x 結論：可以 merge（head 4cac21d）**` | false | 粗體標記黏在行首，role 解析為「**審查」，不計入一般審查序列 |
+| `markdown-quote-no-space` | `>審查：vendor/model-x 結論：可以 merge（head 4cac21d）` | false | 引用符號黏在行首，role 解析為「>審查」，不計入一般審查序列 |
 | `other-role-security` | `安全審查：vendor/model-s 結論：通過（head 1234567）` | false | 角色不在 review_roles |
 
 ### 反例（`parsed: false`）
@@ -167,6 +174,7 @@ $$\text{可以放行} \iff \text{parsed} \land (\text{verdict\_class} == \text{"
 |---|---|---|---|
 | `periodic-row-09-halfwidth-colon-role` | `審查:vendor/model-x 結論：可以 merge（head 4cac21d）` | false | 角色後為半形冒號（不合 `^\S*審查：`） |
 | `periodic-row-10-no-space-before-conclusion` | `審查：vendor/model-x結論：可以 merge（head 4cac21d）` | true | 模型與結論間缺少空格 |
+| `model-conclusion-two-spaces` | `審查：vendor/model-x  結論：可以 merge（head 4cac21d）` | true | 模型與結論間有兩個半形空白 |
 | `periodic-row-11-fullwidth-space-conclusion` | `審查：vendor/model-x　結論：可以 merge（head 4cac21d）` | true | 結論前使用全形空白 |
 | `periodic-row-12-halfwidth-paren-head` | `審查：vendor/model-x 結論：可以 merge(head 4cac21d)` | true | head 括號為半形 |
 | `periodic-row-13-uppercase-hex-head` | `審查：vendor/model-x 結論：可以 merge（head 4CAC21D）` | true | SHA 含大寫十六進位 |
