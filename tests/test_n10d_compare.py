@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+from mcqreport import __version__
 from mcqreport.cli import main
 from mcqreport.compare import compare_tables, render_md
 
@@ -25,7 +26,12 @@ COUNT_NAMES = [
 ]
 RATIO_NAMES = ["review_first_pass", "ci_first_green"]
 DIST_NAMES = ["review_rounds_dist", "cycle_seconds_dist"]
-FLAG_NAMES = ["flags.merged_without_review", "flags.merged_without_ci", "flags.verdict_format_mismatch"]
+FLAG_NAMES = [
+    "flags.merged_without_review",
+    "flags.merged_without_ci",
+    "flags.verdict_format_mismatch",
+    "flags_null_prs",
+]
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
 
@@ -73,7 +79,7 @@ def table(summary_obj, rows=None, window=("2030-01-01T00:00:00Z", "2030-01-08T00
     out = {
         "kind": "mcq-weekly-table",
         "schema_version": 1,
-        "tool_version": "0.5.0",
+        "tool_version": __version__,
         "window": {"from": window[0], "to": window[1]},
         "rows": rows if rows is not None else [],
         "summary": summary_obj,
@@ -82,7 +88,7 @@ def table(summary_obj, rows=None, window=("2030-01-01T00:00:00Z", "2030-01-08T00
     return out
 
 
-def row(ticket, digest=DIGEST_A, tool="0.5.0", closed_at="2030-01-05T00:00:00Z"):
+def row(ticket, digest=DIGEST_A, tool=__version__, closed_at="2030-01-05T00:00:00Z"):
     return {
         "ticket": ticket,
         "status": "complete",
@@ -134,8 +140,12 @@ def test_N10d_flags_object_missing_one_list_gives_null_for_that_flag_only():
 
 @pytest.mark.parametrize(
     "bad_flags",
-    [["not", "an", "object"], {"merged_without_review": {"ticket": "acme/widgets#1"}}],
-    ids=["flags-not-object", "flag-not-list"],
+    [
+        ["not", "an", "object"],
+        {"merged_without_review": {"ticket": "acme/widgets#1"}},
+        {"flags_null_prs": "3"},
+    ],
+    ids=["flags-not-object", "flag-not-list", "flags-null-prs-not-count"],
 )
 def test_N10d_flags_of_the_wrong_shape_are_bad_table(tmp_path, capsys, bad_flags):
     bad = table(summary())
@@ -148,6 +158,18 @@ def test_N10d_flags_of_the_wrong_shape_are_bad_table(tmp_path, capsys, bad_flags
     _, err = capsys.readouterr()
     assert rc == 2
     assert err.startswith("mcq-report: error bad_table: after.flags")
+
+
+def test_N10d_flags_null_prs_is_a_count_and_null_when_the_key_is_missing():
+    before = table(summary(), flags_obj={**flags(), "flags_null_prs": 2})
+    after = table(summary(), flags_obj={**flags(), "flags_null_prs": 5})
+    assert metric(compare_tables(before, after), "flags_null_prs") == {
+        "name": "flags_null_prs", "before": 2, "after": 5, "delta": 3,
+    }
+    # flags() has no flags_null_prs key: that side is null, not 0.
+    assert metric(compare_tables(table(summary()), after), "flags_null_prs") == {
+        "name": "flags_null_prs", "before": None, "after": 5, "delta": None,
+    }
 
 
 def test_N10d_counts_give_after_minus_before_and_null_gives_null_delta():
@@ -178,6 +200,24 @@ def test_N10d_ratio_negative_delta_keeps_sign_and_rounds_down_repeating_thirds()
         table(summary(ci_first_green=ratio(7, 21))),
     )
     assert metric(out, "ci_first_green")["delta_ratio"] == "-0.3333"
+
+
+def test_N10d_ratio_negative_half_rounds_away_from_zero():
+    # 8/160 -> 5/160: delta is exactly -3/160 = -0.01875; the fifth decimal is 5, so it rounds away from zero.
+    out = compare_tables(
+        table(summary(review_first_pass=ratio(8, 160))),
+        table(summary(review_first_pass=ratio(5, 160))),
+    )
+    assert metric(out, "review_first_pass")["delta_ratio"] == "-0.0188"
+
+
+def test_N10d_tiny_negative_delta_rounds_to_zero_without_minus_sign():
+    # 19999/400000 -> 20000/400000 is -1/400000 = -0.0000025, which rounds to 0; no "-0.0000".
+    out = compare_tables(
+        table(summary(ci_first_green=ratio(20000, 400000))),
+        table(summary(ci_first_green=ratio(19999, 400000))),
+    )
+    assert metric(out, "ci_first_green")["delta_ratio"] == "0.0000"
 
 
 def test_N10d_ratio_zero_delta_has_no_minus_sign():
@@ -246,10 +286,37 @@ def test_N10d_distribution_null_median_gives_null_delta_without_conclusion():
 
 def test_N10d_digest_and_tool_version_differences_are_warned_not_refused():
     before = table(summary(), rows=[row("acme/widgets#1", DIGEST_A, "0.4.2")])
-    after = table(summary(), rows=[row("acme/widgets#2", DIGEST_B, "0.5.0")])
+    after = table(summary(), rows=[row("acme/widgets#2", DIGEST_B, __version__)])
     out = compare_tables(before, after)
     assert out["warnings"] == ["config_digest_differs", "tool_version_differs"]
     assert metric(out, "prs_merged")["delta"] == 0
+
+
+def test_N10d_incomplete_table_gives_a_warning_for_its_side_only():
+    before = table(summary())
+    before["incomplete"] = True
+    after = table(summary())
+    after["incomplete"] = False
+    assert compare_tables(before, after)["warnings"] == ["before_incomplete"]
+
+
+def test_N10d_both_incomplete_gives_both_warnings_sorted_with_digest_warnings():
+    before = table(summary(), rows=[row("acme/widgets#1", DIGEST_A)])
+    before["incomplete"] = True
+    after = table(summary(), rows=[row("acme/widgets#1", DIGEST_B)])
+    after["incomplete"] = True
+    assert compare_tables(before, after)["warnings"] == [
+        "after_incomplete", "before_incomplete", "config_digest_differs",
+    ]
+
+
+def test_N10d_markdown_says_when_a_table_is_incomplete():
+    before = table(summary())
+    before["incomplete"] = True
+    md = render_md(compare_tables(before, table(summary())))
+    lines = md.splitlines()
+    assert "> 注意：週表不完整（before_incomplete）" in lines
+    assert "新舊不可直接比" not in md
 
 
 def test_N10d_same_digest_and_version_gives_no_warning():
@@ -320,7 +387,7 @@ def test_N10d_compare_object_has_kind_versions_windows_and_counts():
     out = compare_tables(before, after)
     assert out["kind"] == "mcq-weekly-compare"
     assert out["schema_version"] == 1
-    assert out["tool_version"] == "0.5.0"
+    assert out["tool_version"] == __version__
     assert out["before"] == {"window": before["window"], "tickets": 20}
     assert out["after"]["window"] == after["window"]
 

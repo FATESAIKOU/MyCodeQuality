@@ -37,6 +37,9 @@ RATIO_KEYS = ("review_first_pass", "ci_first_green")
 DIST_KEYS = ("review_rounds_dist", "cycle_seconds_dist")
 # Top-level `flags` in the table: per-PR lists. Compared by their lengths only (count rule).
 FLAG_KEYS = ("merged_without_review", "merged_without_ci", "verdict_format_mismatch")
+# Count of PRs whose verdicts are null (inside `flags`). Missing key → null, not zero.
+FLAG_NULL_KEY = "flags_null_prs"
+INCOMPLETE_WARNINGS = ("before_incomplete", "after_incomplete")
 
 
 def _nonneg_int(value) -> bool:
@@ -78,6 +81,8 @@ def _check_table(obj, label: str) -> None:
         for key in FLAG_KEYS:
             if flags.get(key) is not None and not isinstance(flags[key], list):
                 raise ToolError("bad_table", f"{label}.flags.{key} must be a list or null")
+        if flags.get(FLAG_NULL_KEY) is not None and not _nonneg_int(flags[FLAG_NULL_KEY]):
+            raise ToolError("bad_table", f"{label}.flags.{FLAG_NULL_KEY} must be a count or null")
 
 
 def _fixed(value: Fraction) -> str:
@@ -134,13 +139,23 @@ def _flag_count(flags, key):
     return len(flags[key])
 
 
-def _warnings(before_rows, after_rows) -> list[str]:
-    """Differing config or tool versions mean the two weeks are not directly comparable."""
+def _flags_null_prs(flags):
+    return None if flags is None else flags.get(FLAG_NULL_KEY)
+
+
+def _warnings(before, after) -> list[str]:
+    """Differing config or tool versions, or an incomplete side, mean the numbers need a second look."""
     out = []
+    before_rows, after_rows = before["rows"], after["rows"]
     if {r.get("config_digest") for r in before_rows} != {r.get("config_digest") for r in after_rows}:
         out.append("config_digest_differs")
     if {r.get("tool_version") for r in before_rows} != {r.get("tool_version") for r in after_rows}:
         out.append("tool_version_differs")
+    # Old tables have no `incomplete` key: that is false, not an error.
+    if before.get("incomplete") is True:
+        out.append("before_incomplete")
+    if after.get("incomplete") is True:
+        out.append("after_incomplete")
     return sorted(out)
 
 
@@ -156,6 +171,7 @@ def compare_tables(before, after) -> dict:
     metrics += [
         _count_metric(f"flags.{k}", _flag_count(bf, k), _flag_count(af, k)) for k in FLAG_KEYS
     ]
+    metrics.append(_count_metric(FLAG_NULL_KEY, _flags_null_prs(bf), _flags_null_prs(af)))
     return {
         "kind": COMPARE_KIND,
         "schema_version": SCHEMA_VERSION,
@@ -163,7 +179,7 @@ def compare_tables(before, after) -> dict:
         "before": {"window": before["window"], "tickets": bs.get("tickets")},
         "after": {"window": after["window"], "tickets": a_s.get("tickets")},
         "metrics": metrics,
-        "warnings": _warnings(before["rows"], after["rows"]),
+        "warnings": _warnings(before, after),
     }
 
 
@@ -207,8 +223,12 @@ def render_md(out: dict) -> str:
         f"- 前：{_cell(before['window'].get('from'))} 至 {_cell(before['window'].get('to'))}（{_cell(before['tickets'])} 張單）",
         f"- 後：{_cell(after['window'].get('from'))} 至 {_cell(after['window'].get('to'))}（{_cell(after['tickets'])} 張單）",
     ]
-    if out["warnings"]:
-        lines += ["", f"> 注意：新舊不可直接比（{'、'.join(out['warnings'])}）"]
+    digest_warnings = [w for w in out["warnings"] if w not in INCOMPLETE_WARNINGS]
+    incomplete = [w for w in out["warnings"] if w in INCOMPLETE_WARNINGS]
+    if digest_warnings:
+        lines += ["", f"> 注意：新舊不可直接比（{'、'.join(digest_warnings)}）"]
+    if incomplete:
+        lines += ["", f"> 注意：週表不完整（{'、'.join(incomplete)}）"]
     lines += ["", "| 指標 | 前 | 後 | 變化 | 說明 |", "|---|---|---|---|---|"]
     lines += ["| " + " | ".join(_md_row(m)) + " |" for m in out["metrics"]]
     return "\n".join(lines) + "\n"
