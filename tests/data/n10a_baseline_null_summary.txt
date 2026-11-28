@@ -1,4 +1,4 @@
-taskquality 0.5.0 (schema 1)
+taskquality 0.6.0 (schema 1)
 ticket acme/widgets#11
 status: complete
 clean: false

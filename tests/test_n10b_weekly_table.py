@@ -73,7 +73,7 @@ def _report(ticket, prs, *, usage="absent", cycle=None, old=False):
     report = {
         "kind": "taskquality-report",
         "schema_version": 1,
-        "tool_version": "0.5.0",
+        "tool_version": "0.6.0",
         "config_digest": "sha256:" + "0" * 64,
         "ticket": ticket,
         "status": "complete" if merged and not any(p["state"] == "open" for p in prs) else "in_progress",

@@ -64,7 +64,7 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 
 ## 版本
 
-`tool_version` 取 `mcqweekly.__version__`（目前 `0.5.0`，與其他套件同值），發版時與其他套件一起升。
+`tool_version` 取 `mcqweekly.__version__`（目前 `0.6.0`，與其他套件同值），發版時與其他套件一起升。
 
 ## 退出碼
 
