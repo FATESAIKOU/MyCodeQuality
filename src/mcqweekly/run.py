@@ -12,7 +12,7 @@ from taskquality.conventions import DEFAULT_CONFIG
 from taskquality.fetch import default_runner, fetch_snapshot
 from taskquality.formats import parse_pr_id, read_json_file as tq_read_json_file, validate_input, validate_snapshot
 from taskquality.score import score_ticket
-from mcqweekly import TOOL_VERSION
+from mcqweekly import __version__ as TOOL_VERSION
 from mcqweekly.errors import TOOL_ERRORS
 from mcqweekly.fsio import ensure_private_dir, fsync_dir, private_existing_file, render, replace_atomically, write_new_file
 from mcqweekly.repos import check_repo, is_v1

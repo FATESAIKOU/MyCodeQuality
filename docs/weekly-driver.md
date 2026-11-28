@@ -24,7 +24,7 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 
 - 當下 closed，且 stateReason = COMPLETED；
 - 最後一次 closedAt 落在 [from, to)；
-- 當下 label 含 `層級:c` 或 `層級:d`（兩個都有 → level `c`）。
+- 當下 label 含 `層級:c` 或 `層級:d`；兩個都有 → level `c`（c 比 d 大，PM 追加 2 裁定）。
 
 已知限制（**不是歷史快照**）：
 
@@ -48,8 +48,8 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
   runs/<NNN>/                              每次 run 一個，不覆寫
     population.json                        母體的正規化副本
     reports/<owner>__<repo>__<n>.json      只含這次成功產出的報告
-    table.json                             週表（含 incomplete、incomplete_reasons、failed_tickets）
-    table.md                               人看的表；不完整時結尾附註
+    table.json                             週表：incomplete、incomplete_reasons 由 #62 的 build_table 參數帶入；failed_tickets 是驅動加的頂層鍵
+    table.md                               人看的表；不完整時結尾附一行註記（由本層加在 render_md 之後，不是 #62 的輸出）
     run.json                               診斷（不在決定性範圍內）
   out.json                                 指標：{"current":"runs/<NNN>"}，原子切換
 ```
@@ -61,6 +61,10 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 ## 決定性契約
 
 同一份母體＋快照＋成本匯出＋tool_version → `reports/*`、`table.json`、`table.md` 位元組相同。`run.json` 是診斷，不在契約內（它記 fetched／reused、gh 命令數、`api_pages`、`rate_limit_waits`、耗時以外的計數）。所有 JSON 以 `sort_keys`、縮排 2、UTF-8、結尾一個換行序列化；排序：repo 依小寫名稱，ticket 依 (repo 小寫, 號碼)，failed 依 (ticket, stage, code)，`incomplete_reasons` 依 (repo 先、ticket 後, 小寫名稱, reason)，完全相同的項目去重。
+
+## 版本
+
+`tool_version` 取 `mcqweekly.__version__`（目前 `0.5.0`，與其他套件同值），發版時與其他套件一起升。
 
 ## 退出碼
 
@@ -83,4 +87,4 @@ mcq-weekly run --population <population.json> --work <目錄> [--costs <目錄>]
 
 ## 效能紀錄
 
-`run.json` 記 `gh_calls`（所有 gh 呼叫）、`api_pages`（`gh api` 呼叫次數，每次一頁，因為不用 `--paginate`）、`rate_limit_waits`（taskquality 的重試等待次數）、`tickets`、`prs`。端到端時間由呼叫端量測。10 分鐘是試跑的量測目標，不是保證。
+`run.json` 記 `gh_calls`（run 階段所有 gh 呼叫）、`api_pages`（只計 `gh api` 呼叫，每次一頁，因為不用 `--paginate`；`select` 的 `gh issue list` 不計入）、`rate_limit_waits`（taskquality 的重試等待次數）、`tickets`、`prs`、`exit_code`。端到端時間由呼叫端量測。10 分鐘是試跑的量測目標，不是保證。

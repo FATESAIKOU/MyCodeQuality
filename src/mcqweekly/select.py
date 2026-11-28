@@ -8,7 +8,7 @@ from typing import Any
 
 from mcqreport.common import parse_utc
 from taskquality.fetch import default_runner, execute_with_retry
-from mcqweekly import TOOL_VERSION
+from mcqweekly import __version__ as TOOL_VERSION
 from mcqweekly.errors import TOOL_ERRORS
 from mcqweekly.repos import check_repo
 
@@ -29,7 +29,7 @@ class ListFailed(Exception):
 
 
 def level_of(label_names: set[str]) -> str | None:
-    """Both levels present → "c" (as the design rule is written); otherwise whichever one is present."""
+    """Both levels present → "c" (c is the larger level); otherwise whichever one is present."""
     if LEVEL_LABELS[0] in label_names:
         return "c"
     if LEVEL_LABELS[1] in label_names:
