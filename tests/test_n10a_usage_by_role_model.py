@@ -281,7 +281,8 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 @pytest.mark.parametrize("case", ["absent", "null"])
 @pytest.mark.parametrize("mode", ["json", "summary"])
 def test_no_usage_matches_main_bytes(tmp_path, case, mode):
-    # expected stdout was captured from main (v0.5.0, 1442e97) with the same synthetic input
+    # expected stdout was captured from main (v0.5.0, 1442e97) with the same synthetic input,
+    # then updated by #62 (add-only keys: first_review_head_stale, ci_runs, first_review_head_stale_prs)
     usage = ABSENT if case == "absent" else None
     proc = _run(tmp_path, usage, json_out=(mode == "json"))
     assert proc.returncode == 0, proc.stderr

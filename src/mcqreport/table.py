@@ -2,7 +2,7 @@
 
 Pure functions: no I/O and no clock. `mcq-report table` reads and validates the files; this module only computes.
 Public API:
-- build_table(reports, window, closed_at=None) -> dict: the table as a plain dict (render_json-ready).
+- build_table(reports, window, closed_at=None, incomplete_reasons=None) -> dict: the table as a plain dict (render_json-ready).
 - render_md(table) -> str: the human-readable Markdown table.
 """
 
