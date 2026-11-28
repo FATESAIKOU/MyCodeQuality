@@ -10,6 +10,7 @@ dependencies = []
 qmetrics = "qmetrics.cli:main"
 taskquality = "taskquality.cli:main"
 mcq-report = "mcqreport.cli:main"
+mcq-weekly = "mcqweekly.cli:main"
 
 [dependency-groups]
 dev = [
@@ -25,4 +26,4 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 
 [tool.uv.build-backend]
-module-name = ["qmetrics", "taskquality", "mcqreport"]
+module-name = ["qmetrics", "taskquality", "mcqreport", "mcqweekly"]
