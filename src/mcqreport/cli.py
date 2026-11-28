@@ -1,17 +1,19 @@
-"""mcq-report CLI: `mcq-report index`, `mcq-report name {code,task}`, `mcq-report select`.
+"""mcq-report CLI: `mcq-report index`, `mcq-report name {code,task}`, `mcq-report select`, `mcq-report table`.
 
 Stdlib only. Does not import qmetrics or taskquality, and does not read the clock: times come from --now and friends.
 """
 
 import argparse
 import json
+import os
 import re
 import sys
 
-from mcqreport.common import ToolError, read_json_file, render_json
+from mcqreport.common import ToolError, parse_utc, read_json_file, render_json
 from mcqreport.index import build_index
 from mcqreport.names import code_name, task_name
 from mcqreport.selection import EVENTS, select_tickets, summary_text
+from mcqreport.table import build_table, render_md
 
 EXIT_OK = 0
 EXIT_TOOL_ERROR = 2
@@ -70,6 +72,16 @@ def build_parser() -> argparse.ArgumentParser:
     sl.add_argument("--gh-artifacts", default=None, help="gh api --paginate --slurp artifacts JSON (schedule and issues)")
     sl.add_argument("--tickets", default=None, help="workflow_dispatch: space-separated ticket numbers")
     sl.add_argument("--summary", default=None, help="write the job summary text here (default: stderr)")
+
+    # table
+    tb = sub.add_parser("table", help="weekly table from a directory of taskquality reports")
+    tb.add_argument("--reports", required=True, help="directory of taskquality-report *.json (one per ticket)")
+    tb.add_argument("--from", dest="window_from", required=True, help="window start, UTC (written to the output only)")
+    tb.add_argument("--to", dest="window_to", required=True, help="window end, UTC (written to the output only)")
+    tb.add_argument("--costs", default=None, help="cost export directory (not supported yet)")
+    tb.add_argument("--population", default=None, help="mcq-weekly-population JSON: closed_at per ticket")
+    tb.add_argument("--out", required=True, help="output table JSON")
+    tb.add_argument("--md", default=None, help="output Markdown table")
 
     return p
 
@@ -145,6 +157,64 @@ def _run_select(args) -> int:
     return EXIT_OK
 
 
+def _load_reports(directory):
+    """Every *.json in the directory: a taskquality-report, one per ticket. Sorted by file name."""
+    if not os.path.isdir(directory):
+        raise ToolError("bad_reports_dir", f"not a directory: {directory}")
+    reports, seen = [], set()
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        if not name.endswith(".json") or not os.path.isfile(path):
+            continue
+        report = read_json_file(path, name)
+        if not isinstance(report, dict) or report.get("kind") != "taskquality-report":
+            raise ToolError("bad_report", f"{name} is not a taskquality-report")
+        ticket = report.get("ticket")
+        if not isinstance(ticket, str):
+            raise ToolError("bad_report", f"{name} needs a string ticket")
+        if ticket in seen:
+            raise ToolError("duplicate_ticket", f"more than one report for {ticket}")
+        seen.add(ticket)
+        reports.append(report)
+    return reports
+
+
+def _load_population(path):
+    """closed_at per ticket from an mcq-weekly-population file. Other fields are not read here."""
+    population = read_json_file(path, "population")
+    if not isinstance(population, dict) or population.get("kind") != "mcq-weekly-population":
+        raise ToolError("bad_population", "population is not an mcq-weekly-population")
+    tickets = population.get("tickets")
+    if not isinstance(tickets, list):
+        raise ToolError("bad_population", "population tickets must be a list")
+    closed = {}
+    for item in tickets:
+        if not isinstance(item, dict) or not isinstance(item.get("ticket"), str):
+            raise ToolError("bad_population", "each population ticket needs a string ticket")
+        value = item.get("closed_at")
+        if value is not None:
+            parse_utc(value, "closed_at")
+        closed[item["ticket"]] = value
+    return closed
+
+
+def _run_table(args) -> int:
+    if args.costs is not None:
+        raise ToolError("not_supported", "--costs is not supported yet")
+    parse_utc(args.window_from, "--from")
+    parse_utc(args.window_to, "--to")
+    window = {"from": args.window_from, "to": args.window_to}
+    reports = _load_reports(args.reports)
+    closed_at = _load_population(args.population) if args.population is not None else None
+    table = build_table(reports, window, closed_at=closed_at)
+    with open(args.out, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(render_json(table))
+    if args.md is not None:
+        with open(args.md, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(render_md(table))
+    return EXIT_OK
+
+
 def main(argv=None) -> int:
     parser = build_parser()
     try:
@@ -153,6 +223,8 @@ def main(argv=None) -> int:
             return _run_index(args)
         if args.cmd == "name":
             return _run_name(args)
+        if args.cmd == "table":
+            return _run_table(args)
         return _run_select(args)
     except ToolError as e:
         sys.stderr.write(f"mcq-report: error {e.code}: {_one_line(e.message)}\n")

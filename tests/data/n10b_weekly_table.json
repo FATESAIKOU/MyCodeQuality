@@ -1,0 +1,1029 @@
+{
+  "flags": {
+    "flags_null_prs": 2,
+    "merged_without_ci": [
+      {
+        "pr": "acme/widgets#250",
+        "ticket": "acme/widgets#105"
+      },
+      {
+        "pr": "acme/widgets#300",
+        "ticket": "acme/widgets#110"
+      },
+      {
+        "pr": "acme/widgets#350",
+        "ticket": "acme/widgets#115"
+      },
+      {
+        "pr": "acme/widgets#351",
+        "ticket": "acme/widgets#115"
+      }
+    ],
+    "merged_without_review": [
+      {
+        "pr": "acme/widgets#231",
+        "ticket": "acme/widgets#103"
+      },
+      {
+        "pr": "acme/widgets#240",
+        "ticket": "acme/widgets#104"
+      },
+      {
+        "pr": "acme/widgets#280",
+        "ticket": "acme/widgets#108"
+      },
+      {
+        "pr": "acme/widgets#320",
+        "ticket": "acme/widgets#112"
+      },
+      {
+        "pr": "acme/widgets#351",
+        "ticket": "acme/widgets#115"
+      },
+      {
+        "pr": "acme/widgets#360",
+        "ticket": "acme/widgets#116"
+      }
+    ],
+    "verdict_format_mismatch": [
+      {
+        "lines": 1,
+        "pr": "acme/widgets#330",
+        "state": "merged",
+        "ticket": "acme/widgets#113"
+      }
+    ]
+  },
+  "incomplete": false,
+  "incomplete_reasons": [],
+  "kind": "mcq-weekly-table",
+  "rows": [
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": null,
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 18000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 0,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 1,
+      "status": "complete",
+      "ticket": "acme/widgets#101",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": "2030-01-03T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 36000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 1,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 1
+      },
+      "review_rounds": 2,
+      "status": "complete",
+      "ticket": "acme/widgets#102",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 2,
+        "num": 2
+      },
+      "closed_at": "2030-01-04T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 54000,
+      "first_review_head_stale_prs": 1,
+      "fix_prs_within_7d": 1,
+      "fix_rounds": 2,
+      "post_merge_verdicts": 0,
+      "prs_merged": 2,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 3,
+      "status": "complete",
+      "ticket": "acme/widgets#103",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 1,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 0
+      },
+      "closed_at": "2030-01-05T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 72000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": null,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": null,
+      "review_rounds": 0,
+      "status": "complete",
+      "ticket": "acme/widgets#104",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 1,
+      "usage": null
+    },
+    {
+      "ci_first_green": null,
+      "closed_at": "2030-01-06T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 90000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 0,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 1,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 1,
+      "status": "complete",
+      "ticket": "acme/widgets#105",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 2,
+        "num": 2
+      },
+      "closed_at": null,
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 108000,
+      "first_review_head_stale_prs": 2,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 3,
+      "post_merge_verdicts": 0,
+      "prs_merged": 2,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 2,
+        "num": 2
+      },
+      "review_rounds": 5,
+      "status": "complete",
+      "ticket": "acme/widgets#106",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": "2030-01-01T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 126000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": null,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": null,
+      "review_rounds": null,
+      "status": "complete",
+      "ticket": "acme/widgets#107",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 0
+      },
+      "closed_at": "2030-01-02T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 144000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": null,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": null,
+      "review_rounds": 0,
+      "status": "complete",
+      "ticket": "acme/widgets#108",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 1,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl"
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review"
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 2,
+        "num": 2
+      },
+      "closed_at": "2030-01-03T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 162000,
+      "first_review_head_stale_prs": 2,
+      "fix_prs_within_7d": 1,
+      "fix_rounds": 1,
+      "post_merge_verdicts": 0,
+      "prs_merged": 2,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 2,
+        "num": 0
+      },
+      "review_rounds": 3,
+      "status": "complete",
+      "ticket": "acme/widgets#109",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": null,
+      "closed_at": "2030-01-04T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 180000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 1,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 1,
+      "review_first_pass": {
+        "den": 1,
+        "num": 1
+      },
+      "review_rounds": 2,
+      "status": "complete",
+      "ticket": "acme/widgets#110",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": null,
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 198000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 2,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 3,
+      "status": "complete",
+      "ticket": "acme/widgets#111",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 2,
+        "num": 0
+      },
+      "closed_at": "2030-01-06T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 216000,
+      "first_review_head_stale_prs": 1,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 0,
+      "post_merge_verdicts": 0,
+      "prs_merged": 2,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 1
+      },
+      "review_rounds": 1,
+      "status": "complete",
+      "ticket": "acme/widgets#112",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 1,
+      "usage": []
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": "2030-01-07T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 234000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 0,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 1,
+      "status": "complete",
+      "ticket": "acme/widgets#113",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 1,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": "2030-01-01T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 252000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 1,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 1
+      },
+      "review_rounds": 2,
+      "status": "complete",
+      "ticket": "acme/widgets#114",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": null,
+      "closed_at": "2030-01-02T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 270000,
+      "first_review_head_stale_prs": 1,
+      "fix_prs_within_7d": 1,
+      "fix_rounds": 2,
+      "post_merge_verdicts": 0,
+      "prs_merged": 2,
+      "prs_without_ci": 2,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 3,
+      "status": "complete",
+      "ticket": "acme/widgets#115",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 1,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 0
+      },
+      "closed_at": null,
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 288000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": null,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": null,
+      "review_rounds": 0,
+      "status": "complete",
+      "ticket": "acme/widgets#116",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 1,
+      "usage": []
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": "2030-01-04T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 306000,
+      "first_review_head_stale_prs": null,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 0,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 1,
+      "status": "complete",
+      "ticket": "acme/widgets#117",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 2,
+        "num": 2
+      },
+      "closed_at": "2030-01-05T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 324000,
+      "first_review_head_stale_prs": 2,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 3,
+      "post_merge_verdicts": 0,
+      "prs_merged": 2,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 2,
+        "num": 2
+      },
+      "review_rounds": 5,
+      "status": "complete",
+      "ticket": "acme/widgets#118",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": {
+        "den": 1,
+        "num": 1
+      },
+      "closed_at": "2030-01-06T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": 342000,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": 0,
+      "fix_rounds": 2,
+      "post_merge_verdicts": 0,
+      "prs_merged": 1,
+      "prs_without_ci": 0,
+      "review_first_pass": {
+        "den": 1,
+        "num": 0
+      },
+      "review_rounds": 3,
+      "status": "complete",
+      "ticket": "acme/widgets#119",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 1,
+          "cost_micro_usd": 5,
+          "input_tokens": 100,
+          "model": "model-x",
+          "output_tokens": 10,
+          "provider": "vendor",
+          "role": "impl",
+          "weighted_micro_units": 40,
+          "weighted_null_rows": 0
+        },
+        {
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 4,
+          "cost_micro_usd": 9,
+          "input_tokens": 200,
+          "model": "model-y",
+          "output_tokens": 20,
+          "provider": "other",
+          "role": "review",
+          "weighted_micro_units": null,
+          "weighted_null_rows": 1
+        }
+      ]
+    },
+    {
+      "ci_first_green": null,
+      "closed_at": "2030-01-07T12:00:00Z",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cycle_seconds": null,
+      "first_review_head_stale_prs": 0,
+      "fix_prs_within_7d": null,
+      "fix_rounds": null,
+      "post_merge_verdicts": 0,
+      "prs_merged": 0,
+      "prs_without_ci": 0,
+      "review_first_pass": null,
+      "review_rounds": null,
+      "status": "in_progress",
+      "ticket": "acme/widgets#120",
+      "tool_version": "0.5.0",
+      "unparsed_verdict_lines": 0,
+      "unreviewed_merged_prs": 0,
+      "usage": []
+    }
+  ],
+  "schema_version": 1,
+  "summary": {
+    "ci_first_green": {
+      "den": 21,
+      "null_rows": 4,
+      "num": 16,
+      "sample_sufficient": true
+    },
+    "cycle_seconds_dist": {
+      "median": null,
+      "n": 19,
+      "p90": null,
+      "sample_sufficient": false
+    },
+    "first_review_head_stale_prs": 9,
+    "first_review_head_stale_prs_null_rows": 1,
+    "fix_prs_within_7d": 3,
+    "fix_prs_within_7d_null_rows": 1,
+    "fix_rounds": 18,
+    "fix_rounds_null_rows": 5,
+    "post_merge_verdicts": 0,
+    "post_merge_verdicts_null_rows": 0,
+    "prs_merged": 25,
+    "prs_merged_null_rows": 0,
+    "prs_without_ci": 4,
+    "prs_without_ci_null_rows": 0,
+    "review_first_pass": {
+      "den": 18,
+      "null_rows": 5,
+      "num": 8,
+      "sample_sufficient": false
+    },
+    "review_rounds": 36,
+    "review_rounds_dist": {
+      "median": null,
+      "n": 18,
+      "p90": null,
+      "sample_sufficient": false
+    },
+    "review_rounds_null_rows": 2,
+    "tickets": 20,
+    "unparsed_verdict_lines": 1,
+    "unparsed_verdict_lines_null_rows": 0,
+    "unreviewed_merged_prs": 6,
+    "unreviewed_merged_prs_null_rows": 0,
+    "usage_by_role_model": [
+      {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 16,
+        "cost_micro_usd": 80,
+        "input_tokens": 1600,
+        "model": "model-x",
+        "output_tokens": 160,
+        "provider": "vendor",
+        "role": "impl",
+        "weighted_micro_units": 600,
+        "weighted_null_rows": 1
+      },
+      {
+        "cache_read_tokens": 48,
+        "cache_write_tokens": 64,
+        "cost_micro_usd": 144,
+        "input_tokens": 3200,
+        "model": "model-y",
+        "output_tokens": 320,
+        "provider": "other",
+        "role": "review",
+        "weighted_micro_units": null,
+        "weighted_null_rows": 16
+      }
+    ],
+    "usage_null_rows": 1
+  },
+  "tool_version": "0.5.0",
+  "window": {
+    "from": "2030-01-01T00:00:00Z",
+    "to": "2030-01-08T00:00:00Z"
+  }
+}
