@@ -79,7 +79,7 @@
       "review_rounds": 1,
       "status": "complete",
       "ticket": "acme/widgets#101",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -130,7 +130,7 @@
       "review_rounds": 2,
       "status": "complete",
       "ticket": "acme/widgets#102",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -181,7 +181,7 @@
       "review_rounds": 3,
       "status": "complete",
       "ticket": "acme/widgets#103",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 1,
       "usage": [
@@ -229,7 +229,7 @@
       "review_rounds": 0,
       "status": "complete",
       "ticket": "acme/widgets#104",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 1,
       "usage": null
@@ -252,7 +252,7 @@
       "review_rounds": 1,
       "status": "complete",
       "ticket": "acme/widgets#105",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -303,7 +303,7 @@
       "review_rounds": 5,
       "status": "complete",
       "ticket": "acme/widgets#106",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -351,7 +351,7 @@
       "review_rounds": null,
       "status": "complete",
       "ticket": "acme/widgets#107",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -399,7 +399,7 @@
       "review_rounds": 0,
       "status": "complete",
       "ticket": "acme/widgets#108",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 1,
       "usage": [
@@ -446,7 +446,7 @@
       "review_rounds": 3,
       "status": "complete",
       "ticket": "acme/widgets#109",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -494,7 +494,7 @@
       "review_rounds": 2,
       "status": "complete",
       "ticket": "acme/widgets#110",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -545,7 +545,7 @@
       "review_rounds": 3,
       "status": "complete",
       "ticket": "acme/widgets#111",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -596,7 +596,7 @@
       "review_rounds": 1,
       "status": "complete",
       "ticket": "acme/widgets#112",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 1,
       "usage": []
@@ -622,7 +622,7 @@
       "review_rounds": 1,
       "status": "complete",
       "ticket": "acme/widgets#113",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 1,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -673,7 +673,7 @@
       "review_rounds": 2,
       "status": "complete",
       "ticket": "acme/widgets#114",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -721,7 +721,7 @@
       "review_rounds": 3,
       "status": "complete",
       "ticket": "acme/widgets#115",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 1,
       "usage": [
@@ -769,7 +769,7 @@
       "review_rounds": 0,
       "status": "complete",
       "ticket": "acme/widgets#116",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 1,
       "usage": []
@@ -795,7 +795,7 @@
       "review_rounds": 1,
       "status": "complete",
       "ticket": "acme/widgets#117",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -846,7 +846,7 @@
       "review_rounds": 5,
       "status": "complete",
       "ticket": "acme/widgets#118",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -897,7 +897,7 @@
       "review_rounds": 3,
       "status": "complete",
       "ticket": "acme/widgets#119",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": [
@@ -942,7 +942,7 @@
       "review_rounds": null,
       "status": "in_progress",
       "ticket": "acme/widgets#120",
-      "tool_version": "0.5.0",
+      "tool_version": "0.6.0",
       "unparsed_verdict_lines": 0,
       "unreviewed_merged_prs": 0,
       "usage": []
@@ -1021,7 +1021,7 @@
     ],
     "usage_null_rows": 1
   },
-  "tool_version": "0.5.0",
+  "tool_version": "0.6.0",
   "window": {
     "from": "2030-01-01T00:00:00Z",
     "to": "2030-01-08T00:00:00Z"

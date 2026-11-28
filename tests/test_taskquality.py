@@ -170,7 +170,7 @@ EXPECTED_GOLDEN_REPORT = {
     "schema_version": 1,
     "status": "complete",
     "ticket": "acme/widgets#11",
-    "tool_version": "0.5.0",
+    "tool_version": "0.6.0",
     "usage": {
         "by_model": [
             {
@@ -2049,7 +2049,7 @@ def test_score_summary_output(tmp_path):
     in_p.write_text(json.dumps(GOLDEN_INPUT))
     r = run_tq("score", "--snapshot", str(snap_p), "--input", str(in_p))
     assert r.returncode == 0
-    assert "taskquality 0.5.0" in r.stdout
+    assert "taskquality 0.6.0" in r.stdout
     assert "ticket acme/widgets#11" in r.stdout
     assert "status: complete" in r.stdout
     assert "clean: false" in r.stdout

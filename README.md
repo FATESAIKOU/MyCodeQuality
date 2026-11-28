@@ -31,6 +31,14 @@ The workflow checks out the full history (`fetch-depth: 0`; a shallow clone is a
 
 ### Release notes
 
+#### 0.6.0
+
+- `usage.by_role_model` is added, and usage gets weighted units (`weighted_micro_units`, `weighted_null_rows`). Input keys: `weighted_micro_units` and `agent`; `agent` never appears in the output.
+- PR level: `first_review_head_stale` and `ci_runs`. Metric: `first_review_head_stale_prs`.
+- `mcq-report table` prints the weekly table; see [docs/weekly-table.md](docs/weekly-table.md).
+- `mcq-report compare` compares weekly tables before and after; see [docs/weekly-compare.md](docs/weekly-compare.md).
+- New driver `mcq-weekly` (select / run); see [docs/weekly-driver.md](docs/weekly-driver.md).
+
 #### 0.5.0
 
 - Built-in `verdict_pattern` now accepts one full-width parenthesised note after the model (whitespace allowed) and a `；`/`;` remark after the head. The built-in `config_digest` changes, so 0.4.x and 0.5.0 reports are not directly comparable.

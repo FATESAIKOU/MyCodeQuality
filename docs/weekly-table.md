@@ -32,7 +32,7 @@ mcq-report table --reports <目錄> --from <UTC> --to <UTC> [--population <popul
 {
   "kind": "mcq-weekly-table",
   "schema_version": 1,
-  "tool_version": "0.5.0",
+  "tool_version": "0.6.0",
   "window": {"from": "...", "to": "..."},
   "incomplete": false,
   "incomplete_reasons": [],
