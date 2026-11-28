@@ -6,6 +6,8 @@ Public API:
 - render_md(table) -> str: the human-readable Markdown table.
 """
 
+import json
+
 from mcqreport import __version__ as TOOL_VERSION
 from mcqreport.common import ToolError, parse_utc
 
@@ -234,7 +236,10 @@ def _flags(reports):
 
 
 def _reason_key(item):
-    return (str(item.get("repo", item.get("ticket", ""))), str(item.get("reason", "")))
+    """Total order (#63 r4): repo items before ticket items, then lowercase name, then reason."""
+    if "repo" in item:
+        return (0, str(item["repo"]).lower(), str(item.get("reason", "")))
+    return (1, str(item.get("ticket", "")).lower(), str(item.get("reason", "")))
 
 
 def build_table(reports, window, closed_at=None, incomplete_reasons=None):
@@ -260,7 +265,8 @@ def build_table(reports, window, closed_at=None, incomplete_reasons=None):
     summary["usage_null_rows"] = sum(1 for r in rows if r["usage"] is None)
     summary["usage_by_role_model"] = _summarize_usage(rows)
 
-    reasons = sorted((dict(item) for item in (incomplete_reasons or [])), key=_reason_key)
+    unique = {json.dumps(item, sort_keys=True): dict(item) for item in (incomplete_reasons or [])}
+    reasons = sorted(unique.values(), key=_reason_key)
     return {
         "kind": KIND,
         "schema_version": SCHEMA_VERSION,
