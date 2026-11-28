@@ -113,7 +113,9 @@
 - `schema_version`: 目前為 `1`。
 - `ticket`: 必須與快照的 `ticket` 完全一致，否則視為 `ticket_mismatch` 工具錯誤。
 - `started_at`（選填）: 開工時刻（UTC）。未提供時，若 config 有 `started_label`（config v2）且快照有該標籤的 `labeled` 事件，改採該標籤最早一次的時刻（`cycle_basis: "ticket_label"`）；再沒有，才採最早建立的 PR `created_at`。
-- `usage`（選填）: Token 與成本記錄陣列。各 token 與 `cost_micro_usd` 均為非負整數（避免浮點數；費用單位為微美元 micro-USD，即百萬分之一美元）。
+- `usage`（選填）: Token 與成本記錄陣列。各 token 與 `cost_micro_usd` 均為非負整數（避免浮點數；費用單位為微美元 micro-USD，即百萬分之一美元）。每項可再帶兩個選填鍵：
+  - `weighted_micro_units`: 非負整數或 `null`（加權單位，微單位）。`null` 表示該項未計價（例如免費模型），不是 0。只要任何一項帶有此鍵（值可為 `null`），報告的 `by_model`、`by_role_model`、`totals` 會多出 `weighted_micro_units` 與 `weighted_null_rows` 兩鍵（見下）。
+  - `agent`（選填，字串或 `null`）: 存在且非 `null` 時必須是非空字串；`null` 視同沒帶。這是輸入方的識別資訊，**不進任何輸出**：報告、`warnings`、`missing` 與錯誤訊息都不會出現它的值（錯誤訊息只指出鍵名）。
 - `counters`（選填）: 名稱與非負整數的對應物件，原樣輸出至報告。
 - `prs.<id>.verdicts`（選填）: 覆寫特定 PR 的審查結論序列。若存在（包含空陣列），該 PR 的 `verdicts_source` 記為 `"input"`；若給定 `null`，則該 PR 審查各項輸出為 `null`，原因為 `input_null`。
 - `prs.<id>.rework`（選填）: 布林值或 `null`，覆寫特定 PR 的返工推斷結果，`rework_source` 記為 `"input"`。
@@ -252,6 +254,18 @@
         "provider": "vendor"
       }
     ],
+    "by_role_model": [
+      {
+        "cache_read_tokens": 90000,
+        "cache_write_tokens": null,
+        "cost_micro_usd": 410000,
+        "input_tokens": 120000,
+        "model": "model-y",
+        "output_tokens": 8000,
+        "provider": "vendor",
+        "role": "impl"
+      }
+    ],
     "totals": {
       "cache_read_tokens": 90000,
       "cache_write_tokens": null,
@@ -321,6 +335,15 @@
 - PR 層級：`prs[owner/repo#number].欄位`（例如 `prs[acme/widgets#21].fix_rounds`）。
 - 工單指標層級：`metrics.欄位`（例如 `metrics.review_first_pass`）。
 - 用量層級：`usage.by_model[provider,model].欄位` 或 `usage.totals.欄位`。
+
+### 用量分項（`usage`）
+- `usage.by_model`：依 `(provider, model)` 分組，按此排序。
+- `usage.by_role_model`：依 `(role, provider, model)` 分組，按此排序；每列鍵為 `role`、`provider`、`model` 加各 token 鍵。null 的傳遞規則與 `by_model` 相同，但 `by_role_model` 不新增 `missing` 項目（`by_model` 與 `totals` 已經報了）。
+- 加權兩鍵（只在輸入有任何項目帶 `weighted_micro_units` 時出現）：
+  - `weighted_micro_units`: 該組中非 `null` 值之和；組內全部為 `null`（或該組沒有任何項目帶此鍵）時為 `null`。`null` 表示未計價，不是 0。
+  - `weighted_null_rows`: 該組中值為 `null` 或沒帶此鍵的項目數（整數）。
+  - 加權不進 `missing`，也不影響 `clean`。
+- 沒有任何項目帶 `weighted_micro_units` 時，這兩鍵不出現，輸出與加入此功能前相同（除了多出的 `by_role_model`）。
 - 整體缺值：若整個區塊未提供，標示至該層級（如 `usage`, `counters`, `clean`）。
 - 說明性欄位（`merged_at`, `ci_first_head`, `cycle_basis`）為 `null` 時不在 `missing` 中列出。
 

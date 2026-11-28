@@ -33,6 +33,34 @@ def first_labeled_at(snapshot: dict, label: str) -> str | None:
     return min(times) if times else None
 
 
+def _aggregate_usage(items: list, has_weighted: bool) -> tuple[dict, list]:
+    """Sum one group of usage items: token keys, plus weighted keys when has_weighted.
+
+    A null or missing value in the group makes that token total null (null means unknown, not 0).
+    Returns (values, [(key, reason)]) so the caller decides the missing field name.
+    Weighted: the sum of non-null values, or null when none; weighted_null_rows counts
+    items whose value is null or absent. Weighted never adds to missing.
+    """
+    values = {}
+    missing = []
+    for t_k in TOKEN_KEYS:
+        has_null = any(it.get(t_k) is None and t_k in it for it in items)
+        has_missing = any(t_k not in it for it in items)
+        if has_null:
+            values[t_k] = None
+            missing.append((t_k, "input_null"))
+        elif has_missing:
+            values[t_k] = None
+            missing.append((t_k, "input_missing"))
+        else:
+            values[t_k] = sum(it[t_k] for it in items)
+    if has_weighted:
+        present = [it["weighted_micro_units"] for it in items if it.get("weighted_micro_units") is not None]
+        values["weighted_micro_units"] = sum(present) if present else None
+        values["weighted_null_rows"] = sum(1 for it in items if it.get("weighted_micro_units") is None)
+    return values, missing
+
+
 def score_warnings(
     snapshot: dict,
     unrecognized_count: int,
@@ -486,42 +514,39 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         usage_missing.append(("usage", "input_null"))
     else:
         raw_usage = input_data["usage"]
+        # weighted keys appear in every report only when some item carries the key
+        has_weighted = any("weighted_micro_units" in item for item in raw_usage)
         groups = {}
+        role_groups = {}
         for item in raw_usage:
             k = (item["provider"], item["model"])
             groups.setdefault(k, []).append(item)
+            rk = (item["role"], item["provider"], item["model"])
+            role_groups.setdefault(rk, []).append(item)
 
-        totals = {}
-        for t_k in TOKEN_KEYS:
-            has_null = any(item.get(t_k) is None and t_k in item for item in raw_usage)
-            has_missing = any(t_k not in item for item in raw_usage)
-            if has_null:
-                totals[t_k] = None
-                usage_missing.append((f"usage.totals.{t_k}", "input_null"))
-            elif has_missing:
-                totals[t_k] = None
-                usage_missing.append((f"usage.totals.{t_k}", "input_missing"))
-            else:
-                totals[t_k] = sum(item[t_k] for item in raw_usage)
+        totals, total_missing = _aggregate_usage(raw_usage, has_weighted)
+        for t_k, reason in total_missing:
+            usage_missing.append((f"usage.totals.{t_k}", reason))
 
         by_model = []
         for (provider, model) in sorted(groups.keys()):
             items = groups[(provider, model)]
             entry = {"model": model, "provider": provider}
-            for t_k in TOKEN_KEYS:
-                has_null = any(it.get(t_k) is None and t_k in it for it in items)
-                has_missing = any(t_k not in it for it in items)
-                if has_null:
-                    entry[t_k] = None
-                    usage_missing.append((f"usage.by_model[{provider},{model}].{t_k}", "input_null"))
-                elif has_missing:
-                    entry[t_k] = None
-                    usage_missing.append((f"usage.by_model[{provider},{model}].{t_k}", "input_missing"))
-                else:
-                    entry[t_k] = sum(it[t_k] for it in items)
+            values, missing = _aggregate_usage(items, has_weighted)
+            entry.update(values)
+            for t_k, reason in missing:
+                usage_missing.append((f"usage.by_model[{provider},{model}].{t_k}", reason))
             by_model.append(entry)
 
-        usage = {"by_model": by_model, "totals": totals}
+        # Same null rules as by_model, but no missing items: by_model and totals already report them.
+        by_role_model = []
+        for (role, provider, model) in sorted(role_groups.keys()):
+            entry = {"model": model, "provider": provider, "role": role}
+            values, _ = _aggregate_usage(role_groups[(role, provider, model)], has_weighted)
+            entry.update(values)
+            by_role_model.append(entry)
+
+        usage = {"by_model": by_model, "by_role_model": by_role_model, "totals": totals}
 
     # 7. Missing items list
     missing_items = []
