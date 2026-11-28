@@ -1,4 +1,4 @@
-"""mcq-report CLI: `mcq-report index`, `mcq-report name {code,task}`, `mcq-report select`, `mcq-report table`.
+"""mcq-report CLI: `mcq-report index`, `mcq-report name {code,task}`, `mcq-report select`, `mcq-report table`, `mcq-report compare`.
 
 Stdlib only. Does not import qmetrics or taskquality, and does not read the clock: times come from --now and friends.
 """
@@ -10,6 +10,7 @@ import re
 import sys
 
 from mcqreport.common import ToolError, parse_utc, read_json_file, render_json
+from mcqreport.compare import compare_tables, render_md as render_compare_md
 from mcqreport.index import build_index
 from mcqreport.names import code_name, task_name
 from mcqreport.selection import EVENTS, select_tickets, summary_text
@@ -82,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
     tb.add_argument("--population", default=None, help="mcq-weekly-population JSON: closed_at per ticket")
     tb.add_argument("--out", required=True, help="output table JSON")
     tb.add_argument("--md", default=None, help="output Markdown table")
+    # compare
+    cp = sub.add_parser("compare", help="compare two mcq-weekly-table files (before, after)")
+    cp.add_argument("before", help="mcq-weekly-table JSON for the earlier window")
+    cp.add_argument("after", help="mcq-weekly-table JSON for the later window")
+    cp.add_argument("--out", required=True, help="output path for compare JSON")
+    cp.add_argument("--md", default=None, help="optional human-readable Markdown table")
 
     return p
 
@@ -215,6 +222,16 @@ def _run_table(args) -> int:
     return EXIT_OK
 
 
+def _run_compare(args) -> int:
+    out = compare_tables(read_json_file(args.before, "before"), read_json_file(args.after, "after"))
+    with open(args.out, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(render_json(out))
+    if args.md:
+        with open(args.md, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(render_compare_md(out))
+    return EXIT_OK
+
+
 def main(argv=None) -> int:
     parser = build_parser()
     try:
@@ -225,6 +242,8 @@ def main(argv=None) -> int:
             return _run_name(args)
         if args.cmd == "table":
             return _run_table(args)
+        if args.cmd == "compare":
+            return _run_compare(args)
         return _run_select(args)
     except ToolError as e:
         sys.stderr.write(f"mcq-report: error {e.code}: {_one_line(e.message)}\n")
