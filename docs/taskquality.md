@@ -189,6 +189,7 @@
     },
     "cycle_basis": "input_started_at",
     "cycle_seconds": 10800,
+    "first_review_head_stale_prs": 1,
     "fix_rounds": 1,
     "nonstandard_verdict_lines": 0,
     "post_merge_verdicts": 0,
@@ -221,7 +222,9 @@
       "approved_head_stale": false,
       "ci_first_green": false,
       "ci_first_head": "0000000ccccccccccccccccccccccccccccccccc",
+      "ci_runs": 2,
       "created_at": "2030-01-02T03:00:00Z",
+      "first_review_head_stale": true,
       "first_review_pass": false,
       "fix_rounds": 1,
       "merged_at": "2030-01-02T05:00:00Z",
@@ -293,6 +296,11 @@
   - PR 層：`nonstandard_verdict_lines`、`post_merge_verdicts`、`structure_note_verdicts`、`unparsed_verdict_lines`。
   - metrics 層：上述四者在 `merged` PR 的加總值。
   - 無上述情形時，新欄位數值皆為 0。
+
+### 首審過期與 CI run 數（N10b）
+- **`first_review_head_stale`**（PR 層）：已合併、有審查結論（V 非空）、快照有 `head_sha` 時，合併前第一筆結論（`V[0]`）的 head 不是 PR `head_sha` 的前綴 → `true`，是 → `false`；其餘（未合併、V 為空或 `null`、快照無 `head_sha`）→ `null`。只看 head，不看結論是通過或要修。
+- **`first_review_head_stale_prs`**（metrics）：已合併 PR 中 `first_review_head_stale` 為 `true` 的數目。
+- **`ci_runs`**（PR 層）：該 PR 計入的 CI run 數，與 `prs_without_ci` 同一套篩選（`run_attempt == 1`，並符合 config 的 `ci_workflows`）。已合併且 `ci_runs == 0` 即計入 `prs_without_ci`。
 
 ### 工單狀態（`status`）
 - `no_prs`: 快照中無屬於本工單的 PR。

@@ -208,6 +208,13 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
                 head_sha = (pr.get("head_sha") or "").lower()
                 approved_head_stale = not head_sha.startswith(last_v["head"])
 
+        # first_review_head_stale: only merged PRs with a verdict and a snapshot head_sha (N10b §0)
+        head_sha = (pr.get("head_sha") or "").lower()
+        if state == "merged" and V and head_sha:
+            first_review_head_stale = not head_sha.startswith(V[0]["head"])
+        else:
+            first_review_head_stale = None
+
         # CI Runs
         raw_runs = pr.get("ci_runs", [])
         ci_runs = [r for r in raw_runs if r.get("run_attempt") == 1]
@@ -247,7 +254,9 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
             "approved_head_stale": approved_head_stale,
             "ci_first_green": ci_first_green,
             "ci_first_head": ci_first_head,
+            "ci_runs": len(ci_runs),
             "created_at": pr["created_at"],
+            "first_review_head_stale": first_review_head_stale,
             "first_review_pass": first_review_pass,
             "fix_rounds": fix_rounds,
             "merged_at": pr.get("merged_at"),
@@ -273,6 +282,9 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
     prs_closed_unmerged = sum(1 for p in pr_results if p["state"] == "closed_unmerged")
     unreviewed_merged_prs = sum(
         1 for p in pr_results if p["state"] == "merged" and p["verdicts"] == 0
+    )
+    first_review_head_stale_prs = sum(
+        1 for p in pr_results if p["state"] == "merged" and p["first_review_head_stale"] is True
     )
     prs_without_ci = sum(
         1 for p in pr_results if p["state"] == "merged" and p["ci_first_head"] is None
@@ -414,6 +426,7 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         "ci_first_green": ci_first_green,
         "cycle_basis": cycle_basis,
         "cycle_seconds": cycle_seconds,
+        "first_review_head_stale_prs": first_review_head_stale_prs,
         "fix_rounds": fix_rounds,
         "nonstandard_verdict_lines": sum(p["nonstandard_verdict_lines"] for p in merged_prs),
         "post_merge_verdicts": sum(p["post_merge_verdicts"] for p in merged_prs),
