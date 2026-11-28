@@ -23,9 +23,9 @@ SNAPSHOT = {
     "prs": [],
 }
 
-BUILTIN_DIGEST = "sha256:e1749917f765ed47fedc6477d86d6b5a94b04d061a37b32e8fde5b7736333c5c"
-DEFAULTS_STDOUT_SHA256 = "492254fd2ee7189290da4992db04a92f9bf0d652f9c361fb1dac25fbeb3b7506"
-V1_CI_WORKFLOWS_DIGEST = "sha256:77a56823c8d5d12ea3035f11f4eea307a74415092b1e6cf3b0404eee2fdcfbb8"
+BUILTIN_DIGEST = "sha256:d81a3345c0f0d7c2b0630be4dc96f4f4c9d999b3f09ff644079308deef9a520e"
+DEFAULTS_STDOUT_SHA256 = "48c08ca4819713126c9ed92619e06b4f3e1a478f84aa3dc55a0b1ed5afd0ac43"
+V1_CI_WORKFLOWS_DIGEST = "sha256:42fd5527841fe9253b4a5ec0e9378b5adcbc693118727117eeee0c14d6753bc3"
 
 
 def run_tq(*args):
@@ -52,7 +52,7 @@ C_P1_ROWS = [
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4CAC21D）", False, None, None),
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21）", False, None, None),
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head: 4cac21d）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d；無高）", False, None, None),
+    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d；無高）", True, "審查", "pass"),
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（無阻擋項）（head 4cac21d）", False, None, None),
     ("審查：anthropic/claude-sonnet-5-5 結論：要修（輕）（head e786beb）", False, None, None),
     ("審查：google/Gemini 4 Hydrogen (Medium) 結論：可以 merge（head 8521f31）", False, None, None),

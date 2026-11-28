@@ -131,7 +131,7 @@
   "ticket_ref_keywords": ["closes", "close", "closed", "fixes", "fix", "fixed", "resolves", "resolve", "resolved", "refs", "ref"],
   "verdict_sources": ["comments"],
   "github_review_role": "審查",
-  "verdict_pattern": "^(?P<role>\\S*審查)：(?P<model>\\S+) 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})）",
+  "verdict_pattern": "^(?P<role>\\S*審查)：(?P<model>[^\\s（）]+)(?:（(?P<note>[^）]*)）)? 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})(?:[；;][^）]*)?）",
   "review_roles": ["審查"],
   "pass_verdicts": ["可以 merge", "通過"],
   "fail_verdicts": ["要修", "要退回", "要退回設計"],
@@ -188,6 +188,8 @@
     "cycle_basis": "input_started_at",
     "cycle_seconds": 10800,
     "fix_rounds": 1,
+    "nonstandard_verdict_lines": 0,
+    "post_merge_verdicts": 0,
     "prs_closed_unmerged": 0,
     "prs_merged": 1,
     "prs_open": 0,
@@ -198,6 +200,8 @@
       "num": 0
     },
     "rework_prs": 0,
+    "structure_note_verdicts": 0,
+    "unparsed_verdict_lines": 0,
     "unreviewed_merged_prs": 0
   },
   "missing": [
@@ -219,11 +223,15 @@
       "first_review_pass": false,
       "fix_rounds": 1,
       "merged_at": "2030-01-02T05:00:00Z",
+      "nonstandard_verdict_lines": 0,
+      "post_merge_verdicts": 0,
       "pr": "acme/widgets#21",
       "re_reviews": 1,
       "rework": false,
       "rework_source": "derived",
       "state": "merged",
+      "structure_note_verdicts": 0,
+      "unparsed_verdict_lines": 0,
       "verdicts": 2,
       "verdicts_source": "comments"
     }
@@ -257,10 +265,20 @@
 ```
 
 ### 提示（`warnings`）
-`warnings` 是只加不改的提示：不影響任何指標、`clean`、`missing` 或 `config_digest`，人看的摘要（不帶 `--json`）會以 `warning: <代碼>` 一行一個印出。字串依字典序排序、去重；沒有觸發時是 `[]`。目前有兩種：
+`warnings` 是只加不改的提示：不影響任何指標、`clean`、`missing` 或 `config_digest`，人看的摘要（不帶 `--json`）會以 `warning: <代碼>` 一行一個印出。字串依字典序排序、去重；沒有觸發時是 `[]`。目前有三種：
 
+- `unparsed_verdict_lines: N verdict-like line(s) did not match verdict_pattern`：工單各 PR 留言中，有 N 筆第一行符合 `^\S*審查：` 但整行不符合 `verdict_pattern`（只看 comments 來源）。留言的實際文字不會出現在提示裡。
 - `unrecognized_verdict: N verdict line(s) …`：工單各 PR 的審查行中，有 N 筆結論字既不在 `pass_verdicts` 也不在 `fail_verdicts`（即 `other`）。這些審查行已被認得（格式正確），只是結論字不在清單裡，所以審查各項會是 `null`（`unrecognized_verdict`）。**結論字的實際文字不會出現在提示裡**。處理：若那是團隊慣用的通過字（例如只寫「可以」），在自己的 config 的 `pass_verdicts` 加上它；若是要修的字，加進 `fail_verdicts`。不要靠改內建預設。
 - `ci_workflows_unmatched: <名稱>`：config 的 `ci_workflows` 有一項，與快照中任何 CI run 的 workflow 名稱都不相等（通常是改名，或寫錯）。這一項因此對不上任何 run，PR 會靜靜地變成 `no_ci_runs`。快照裡一筆 CI run 都沒有時不提示（那是 `no_ci_runs` 本來的訊息）；`ci_workflows` 是 `null` 時也不提示。若只差大小寫，訊息改為 `ci_workflows_unmatched: <名稱> (case differs from an existing workflow name)`，並不列出實際名稱。比對範圍是整個快照的 CI run（包括被排除的 PR 與 `run_attempt` 不是 1 的 run）：警告只抓「名稱在整個快照裡都對不到」；工單本身沒有符合的 run 時，仍由 `missing` 的 `no_ci_runs` 反映。處理：把 config 的名字改成 GitHub Actions 顯示的 workflow `name:` 一字不差的寫法。
+
+### 審查行解析與新欄位（N37）
+- **合併前結論序列過濾**：對已合併（`merged`）的 PR，結論序列 V 只採計 `at ≤ merged_at`（同一秒算在內）；`at > merged_at` 的審查行另外計入 PR 層的 `post_merge_verdicts`，不進入一次通過、修訂輪數、重審、approved_head_stale 或未審先合的判斷。`open` 與 `closed_unmerged` PR 不進行時間過濾。`--input` 覆寫的 `verdicts` 亦同樣適用此過濾規則。
+- **結構審查註記排除**：若 config 的 `verdict_pattern` 定義了名為 `note` 的擷取群組，且 `role` 屬於 `review_roles`，當 `note` 內容含有「架構」或「結構」字樣時，該審查行不進入 V，改計入 `structure_note_verdicts`。若 pattern 未包含 `note` 群組，此規則不作用。
+- **head 括號內補充說明容忍**：pattern 的 head 段支援 `（head (?P<head>[0-9a-f]{7,40})(?:[；;][^）]*)?）`，當 head 後接全形或半形分號時，容忍括號內之補充說明，補充說明不進任何指標。此類解析成功但屬非標準寫法之審查行，計入 PR 層的 `nonstandard_verdict_lines`。
+- **指標加總與新欄位**：
+  - PR 層：`nonstandard_verdict_lines`、`post_merge_verdicts`、`structure_note_verdicts`、`unparsed_verdict_lines`。
+  - metrics 層：上述四者在 `merged` PR 的加總值。
+  - 無上述情形時，新欄位數值皆為 0。
 
 ### 工單狀態（`status`）
 - `no_prs`: 快照中無屬於本工單的 PR。
