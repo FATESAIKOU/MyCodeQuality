@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     ],
     "verdict_sources": ["comments"],
     "github_review_role": "審查",
-    "verdict_pattern": r"^(?P<role>\S*審查)：(?P<model>\S+) 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})）",
+    "verdict_pattern": r"^(?P<role>\S*審查)：(?P<model>[^\s（）]+)(?:（(?P<note>[^）]*)）)? 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})(?:[；;][^）]*)?）",
     "review_roles": ["審查"],
     "pass_verdicts": ["可以 merge", "通過"],
     "fail_verdicts": ["要修", "要退回", "要退回設計"],
@@ -126,49 +126,73 @@ def detect_rework(
     return False
 
 
-def extract_verdicts(
+VERDICT_LINE_PREFIX_RE = re.compile(r"^\S*審查：")
+STRUCTURE_NOTE_MARKERS = ("架構", "結構")
+
+
+def extract_verdicts_detailed(
     pr: dict,
     input_prs_override: dict | None,
     config: dict,
-) -> tuple[str, list[dict] | None]:
-    """Extract review verdicts sequence V for a PR.
+) -> dict:
+    """Extract review verdicts sequence V and the N37 PR-level counters.
 
-    Returns (verdicts_source, V_list).
-    If input explicitly provides verdicts as null, V_list is None.
+    Returns a dict with:
+    - `source`: verdicts_source string
+    - `verdicts`: V_list, or None when input explicitly provides verdicts as null
+    - `post_merge_verdicts`: review verdicts of a merged PR whose `at` is after `merged_at`
+    - `unparsed_verdict_lines`: comment first lines that look like verdict lines
+      (`^\\S*審查：`) but do not match verdict_pattern (comments source only)
+    - `structure_note_verdicts`: verdict lines dropped because their `note`
+      group mentions architecture/structure (only when the pattern has a `note` group)
     """
     pr_id = pr["id"]
+    unparsed_verdict_lines = 0
+    structure_note_verdicts = 0
+    nonstandard_verdict_lines = 0
+
     if input_prs_override and pr_id in input_prs_override and "verdicts" in input_prs_override[pr_id]:
+        verdicts_source = "input"
         raw_v = input_prs_override[pr_id]["verdicts"]
         if raw_v is None:
-            return "input", None
-        # raw_v is a list of dicts: at, role, model, verdict, head
-        filtered = []
-        for idx, item in enumerate(raw_v):
-            if item.get("role") in config["review_roles"]:
-                filtered.append({
-                    "at": item["at"],
-                    "idx": idx,
-                    "role": item["role"],
-                    "model": item.get("model"),
-                    "verdict": item["verdict"],
-                    "head": item["head"].lower(),
-                })
-        filtered.sort(key=lambda x: (x["at"], x["idx"]))
-        return "input", filtered
+            V = None
+        else:
+            # raw_v is a list of dicts: at, role, model, verdict, head
+            V = []
+            for idx, item in enumerate(raw_v):
+                if item.get("role") in config["review_roles"]:
+                    V.append({
+                        "at": item["at"],
+                        "idx": idx,
+                        "role": item["role"],
+                        "model": item.get("model"),
+                        "verdict": item["verdict"],
+                        "head": item["head"].lower(),
+                    })
+            V.sort(key=lambda x: (x["at"], x["idx"]))
+    else:
+        verdicts_source = "+".join(s for s in ["comments", "reviews"] if s in config["verdict_sources"])
+        V = []
+        verdict_re = re.compile(config["verdict_pattern"])
+        has_note_group = "note" in verdict_re.groupindex
 
-    verdicts_source = "+".join(s for s in ["comments", "reviews"] if s in config["verdict_sources"])
-    V = []
-    verdict_re = re.compile(config["verdict_pattern"])
-
-    if "comments" in config["verdict_sources"]:
-        for c in pr.get("comments", []):
-            line = c.get("first_line", "")
-            m = verdict_re.match(line)
-            if m:
+        if "comments" in config["verdict_sources"]:
+            for c in pr.get("comments", []):
+                line = c.get("first_line") or ""
+                m = verdict_re.match(line)
+                if m is None:
+                    if VERDICT_LINE_PREFIX_RE.match(line):
+                        unparsed_verdict_lines += 1
+                    continue
                 if any(m.group(g) is None for g in ("role", "model", "verdict", "head")):
                     continue
                 role = m.group("role")
                 if role in config["review_roles"]:
+                    if has_note_group:
+                        note = m.group("note")
+                        if note and any(marker in note for marker in STRUCTURE_NOTE_MARKERS):
+                            structure_note_verdicts += 1
+                            continue
                     raw_verdict = m.group("verdict").strip()
                     if raw_verdict in config["pass_verdicts"]:
                         v_kind = "pass"
@@ -177,6 +201,9 @@ def extract_verdicts(
                     else:
                         v_kind = "other"
                     head = m.group("head").lower()
+                    head_end = m.end("head")
+                    if line[head_end : head_end + 1] in ("；", ";"):
+                        nonstandard_verdict_lines += 1
                     V.append({
                         "at": c["created_at"],
                         "source_order": 0,
@@ -187,26 +214,42 @@ def extract_verdicts(
                         "head": head,
                     })
 
-    if "reviews" in config["verdict_sources"]:
-        for r in pr.get("reviews", []):
-            st = r.get("state")
-            if st == "APPROVED":
-                v_kind = "pass"
-            elif st == "CHANGES_REQUESTED":
-                v_kind = "fail"
-            else:
-                continue
-            role = config["github_review_role"]
-            if role in config["review_roles"]:
-                V.append({
-                    "at": r["submitted_at"],
-                    "source_order": 1,
-                    "id": r["id"],
-                    "role": role,
-                    "model": None,
-                    "verdict": v_kind,
-                    "head": r["commit_id"].lower(),
-                })
+        if "reviews" in config["verdict_sources"]:
+            for r in pr.get("reviews", []):
+                st = r.get("state")
+                if st == "APPROVED":
+                    v_kind = "pass"
+                elif st == "CHANGES_REQUESTED":
+                    v_kind = "fail"
+                else:
+                    continue
+                role = config["github_review_role"]
+                if role in config["review_roles"]:
+                    V.append({
+                        "at": r["submitted_at"],
+                        "source_order": 1,
+                        "id": r["id"],
+                        "role": role,
+                        "model": None,
+                        "verdict": v_kind,
+                        "head": r["commit_id"].lower(),
+                    })
 
-    V.sort(key=lambda x: (x["at"], x["source_order"], x["id"]))
-    return verdicts_source, V
+        V.sort(key=lambda x: (x["at"], x["source_order"], x["id"]))
+
+    # N37 decision 3: only verdicts at or before merged_at count; later ones are separate.
+    post_merge_verdicts = 0
+    merged_at = pr.get("merged_at")
+    if V and merged_at is not None:
+        kept = [v for v in V if v["at"] <= merged_at]
+        post_merge_verdicts = len(V) - len(kept)
+        V = kept
+
+    return {
+        "source": verdicts_source,
+        "verdicts": V,
+        "post_merge_verdicts": post_merge_verdicts,
+        "structure_note_verdicts": structure_note_verdicts,
+        "unparsed_verdict_lines": unparsed_verdict_lines,
+        "nonstandard_verdict_lines": nonstandard_verdict_lines,
+    }

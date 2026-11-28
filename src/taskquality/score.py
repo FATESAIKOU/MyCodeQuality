@@ -2,7 +2,7 @@
 
 from taskquality.conventions import (
     detect_rework,
-    extract_verdicts,
+    extract_verdicts_detailed,
     heads_match,
     match_ticket_ref,
 )
@@ -33,7 +33,12 @@ def first_labeled_at(snapshot: dict, label: str) -> str | None:
     return min(times) if times else None
 
 
-def score_warnings(snapshot: dict, unrecognized_count: int, config: dict) -> list[str]:
+def score_warnings(
+    snapshot: dict,
+    unrecognized_count: int,
+    config: dict,
+    unparsed_count: int = 0,
+) -> list[str]:
     """Advisory hints for the report's `warnings` (§3.0); they never change any other field.
 
     Sorted and de-duplicated. The conclusion text from GitHub is never echoed back.
@@ -43,6 +48,10 @@ def score_warnings(snapshot: dict, unrecognized_count: int, config: dict) -> lis
         warnings.append(
             f"unrecognized_verdict: {unrecognized_count} verdict line(s) matched the pattern "
             "but the conclusion is in neither pass_verdicts nor fail_verdicts"
+        )
+    if unparsed_count > 0:
+        warnings.append(
+            f"unparsed_verdict_lines: {unparsed_count} verdict-like line(s) did not match verdict_pattern"
         )
 
     # ci_workflows names checked against every ci_run in the snapshot; no runs at all means no hint
@@ -106,7 +115,13 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
             state = "closed_unmerged"
 
         # Verdicts & Review Metrics
-        verdicts_source, V = extract_verdicts(pr, input_prs_override, config)
+        v_info = extract_verdicts_detailed(pr, input_prs_override, config)
+        verdicts_source = v_info["source"]
+        V = v_info["verdicts"]
+        pr_post_merge = v_info["post_merge_verdicts"]
+        pr_structure_note = v_info["structure_note_verdicts"]
+        pr_unparsed = v_info["unparsed_verdict_lines"]
+        pr_nonstandard = v_info["nonstandard_verdict_lines"]
         if V:
             unrecognized_count += sum(1 for v in V if v["verdict"] == "other")
         if V is None:
@@ -208,11 +223,15 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
             "first_review_pass": first_review_pass,
             "fix_rounds": fix_rounds,
             "merged_at": pr.get("merged_at"),
+            "nonstandard_verdict_lines": pr_nonstandard,
+            "post_merge_verdicts": pr_post_merge,
             "pr": pr_id,
             "re_reviews": re_reviews,
             "rework": rework,
             "rework_source": rework_source,
             "state": state,
+            "structure_note_verdicts": pr_structure_note,
+            "unparsed_verdict_lines": pr_unparsed,
             "verdicts": verdicts,
             "verdicts_source": verdicts_source,
         })
@@ -368,6 +387,8 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         "cycle_basis": cycle_basis,
         "cycle_seconds": cycle_seconds,
         "fix_rounds": fix_rounds,
+        "nonstandard_verdict_lines": sum(p["nonstandard_verdict_lines"] for p in merged_prs),
+        "post_merge_verdicts": sum(p["post_merge_verdicts"] for p in merged_prs),
         "prs_closed_unmerged": prs_closed_unmerged,
         "prs_merged": prs_merged,
         "prs_open": prs_open,
@@ -375,6 +396,8 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         "re_reviews": re_reviews,
         "review_first_pass": review_first_pass,
         "rework_prs": rework_prs,
+        "structure_note_verdicts": sum(p["structure_note_verdicts"] for p in merged_prs),
+        "unparsed_verdict_lines": sum(p["unparsed_verdict_lines"] for p in merged_prs),
         "unreviewed_merged_prs": unreviewed_merged_prs,
     }
 
@@ -564,5 +587,10 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
         "ticket": ticket,
         "tool_version": TOOL_VERSION,
         "usage": usage,
-        "warnings": score_warnings(snapshot, unrecognized_count, config),
+        "warnings": score_warnings(
+            snapshot,
+            unrecognized_count,
+            config,
+            metrics["unparsed_verdict_lines"],
+        ),
     }

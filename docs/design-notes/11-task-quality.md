@@ -284,6 +284,8 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
 }
 ```
 
+> 註：上面的 `verdict_pattern` 已由 #66 改為 `^(?P<role>\S*審查)：(?P<model>[^\s（）]+)(?:（(?P<note>[^）]*)）)? 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})(?:[；;][^）]*)?）`（見 docs/taskquality.md）。
+
 - `ticket_ref_keywords`：PR 標題或本文中，`<keyword>[:]? <ref>`（不分大小寫）裡的 `<ref>` 指到這張 ticket（同 repo 的 `#N`、`owner/repo#N`、或 issue URL）就屬於這張 ticket。
 - `verdict_sources`：非空、不重複，元素是 `comments`、`reviews` 之一（否則 `config_bad_shape`）。`comments`：留言第一行套 `verdict_pattern`，不中的留言不算結論。`reviews`：GitHub 正式 review，`APPROVED`→pass、`CHANGES_REQUESTED`→fail，`COMMENTED`、`DISMISSED` 不算結論（不進 V，也不是 `other`）；at＝`submitted_at`，head＝`commit_id`。可兩個都開。
 - `github_review_role`：GitHub 正式 review 沒有角色字，一律當成這個角色，再和其他結論一樣經過 `review_roles` 過濾（沒有豁免）。預設 `"審查"`，所以開了 `reviews` 時正式 review 算進審查指標；不想算就改成不在 `review_roles` 的字。

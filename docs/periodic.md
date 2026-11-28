@@ -1,6 +1,6 @@
 # 定期品質報告：慣例
 
-本頁說明 PR 要怎麼寫，`taskquality` 才能正確讀到審查結論與單號。格式以現行程式的行為為準；`tests/test_conventions_lock.py` 把這裡的每一列鎖成測試（契約 C-P1、C-P2）。內建 config 不改，所以這些格式不會因為升版而變。
+本頁說明 PR 要怎麼寫，`taskquality` 才能正確讀到審查結論與單號。格式以現行程式的行為為準；`tests/test_conventions_lock.py` 把這裡的每一列鎖成測試（契約 C-P1、C-P2）。內建 verdict_pattern 於本版改變；使用者自訂 config 的 pattern 不會自動更新。
 
 範例都用合成資料：單是 `acme/widgets#310`，PR 也在 `acme/widgets`。
 
@@ -9,14 +9,16 @@
 格式（逐字，`<…>` 換成實際內容）：
 
 ```
-審查：<provider>/<model> 結論：<結論字>（head <commit SHA>）
+審查：<provider>/<model>[（<註記>）] 結論：<結論字>（head <commit SHA>）
 ```
 
 - `審查`、`結論` 後面是**全形冒號** `：`。
 - `<model>` 與 `結論` 之間是**一個半形空白**。
+- `<model>` 後可接**一個**全形括號註記 `（<註記>）`（內容不含 `）`，可含空白），註記不進入審查指標。若註記內容含有「架構」或「結構」字樣（例如 `（架構師結構審）`），視為結構審查、不進入審查指標，改計入 `structure_note_verdicts`。這條是舊寫法的相容規則；架構師的結構審查一律寫成 `結構審查：` 開頭。半形括號 `(…)` 不當註記：它會整段併進 `<model>`，該行照一般審查計入，即使內容含「結構」也不算結構審查；請一律用全形。
 - 括號是**全形** `（` `）`；`head` 與 SHA 之間是一個半形空白。
 - SHA 是**小寫**十六進位，7～40 碼。
-- `<provider>/<model>` 中間不能有空白。
+- `<provider>/<model>` 中間不能有空白或全形括號。
+- 對於已合併（`merged`）的 PR，結論序列只採計 `at ≤ merged_at`（同一秒算在內）；合併後才貼的審查行另計入 `post_merge_verdicts`，不進入一次通過、要修輪數、重審、approved_head_stale 或未審先合的判斷。
 - `<結論字>` 只能是下列之一：
   - 通過：`可以 merge`、`通過`
   - 要修：`要修`、`要退回`、`要退回設計`
@@ -30,6 +32,8 @@
 | 寫法（逐字） | 結果 |
 |---|---|
 | `審查：vendor/model-x 結論：可以 merge（head 4cac21d）` | ✅ 通過 |
+| `審查：vendor/model-x（pipe a, high） 結論：可以 merge（head 1234567）` | ✅ 通過（註記含空白） |
+| `審查：vendor/model-x(結構) 結論：通過（head 1234567）` | ✅ 通過（半形括號不當註記，併進 model；不算結構審查） |
 | `審查：vendor/model-x 結論：要修（head 30b3c96）` | ✅ 要修 |
 | `審查：vendor/model-y 結論：要退回（head 30b3c96a1b2c3d4e5f60718293a4b5c6d7e8f901）` | ✅ 要修（40 碼可） |
 | `審查：vendor/model-x 結論：要修（head 30b3c96） 高 1、中 3，報告見 REPORT-12-review.md` | ✅ 要修（補充寫在 `）` 之後） |
@@ -42,7 +46,7 @@
 | `審查：vendor/model-x 結論：可以 merge（head 4CAC21D）` | ❌ 大寫 |
 | `審查：vendor/model-x 結論：可以 merge（head 4cac21）` | ❌ 只有 6 碼 |
 | `審查：vendor/model-x 結論：可以 merge（head: 4cac21d）` | ❌ `head:` 多了冒號 |
-| `審查：vendor/model-x 結論：可以 merge（head 4cac21d；無高）` | ❌ 括號內有補充 |
+| `審查：vendor/model-x 結論：可以 merge（head 4cac21d；無高）` | ✅ 通過（容忍 head 括號內有補充，計入 nonstandard_verdict_lines） |
 | `審查：vendor/model-x 結論：可以 merge（無阻擋項）（head 4cac21d）` | ❌ head 前多一組括號 |
 | `審查：vendor/model-x 結論：要修（輕）（head e786beb）` | ❌ 同上 |
 | `審查：vendor/Model X (Medium) 結論：可以 merge（head 8521f31）` | ❌ 模型名有空白 |
