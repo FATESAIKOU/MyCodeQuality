@@ -180,6 +180,18 @@ EXPECTED_GOLDEN_REPORT = {
                 "provider": "vendor",
             }
         ],
+        "by_role_model": [
+            {
+                "cache_read_tokens": 90000,
+                "cache_write_tokens": None,
+                "cost_micro_usd": 410000,
+                "input_tokens": 120000,
+                "model": "model-y",
+                "output_tokens": 8000,
+                "provider": "vendor",
+                "role": "impl",
+            }
+        ],
         "totals": {
             "cache_read_tokens": 90000,
             "cache_write_tokens": None,

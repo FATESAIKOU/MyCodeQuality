@@ -1,0 +1,104 @@
+{
+  "clean": false,
+  "config_digest": "sha256:d81a3345c0f0d7c2b0630be4dc96f4f4c9d999b3f09ff644079308deef9a520e",
+  "counters": null,
+  "excluded_prs": [],
+  "kind": "taskquality-report",
+  "metrics": {
+    "approved_head_stale": null,
+    "ci_first_green": null,
+    "cycle_basis": "first_pr_created",
+    "cycle_seconds": 7200,
+    "fix_rounds": null,
+    "nonstandard_verdict_lines": 0,
+    "post_merge_verdicts": 0,
+    "prs_closed_unmerged": 0,
+    "prs_merged": 1,
+    "prs_open": 0,
+    "prs_without_ci": 1,
+    "re_reviews": null,
+    "review_first_pass": null,
+    "rework_prs": 0,
+    "structure_note_verdicts": 0,
+    "unparsed_verdict_lines": 0,
+    "unreviewed_merged_prs": 1
+  },
+  "missing": [
+    {
+      "field": "counters",
+      "reason": "input_missing"
+    },
+    {
+      "field": "metrics.approved_head_stale",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "metrics.ci_first_green",
+      "reason": "no_ci_runs"
+    },
+    {
+      "field": "metrics.fix_rounds",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "metrics.re_reviews",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "metrics.review_first_pass",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "prs[acme/widgets#21].approved_head_stale",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "prs[acme/widgets#21].ci_first_green",
+      "reason": "no_ci_runs"
+    },
+    {
+      "field": "prs[acme/widgets#21].first_review_pass",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "prs[acme/widgets#21].fix_rounds",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "prs[acme/widgets#21].re_reviews",
+      "reason": "no_verdict"
+    },
+    {
+      "field": "usage",
+      "reason": "input_missing"
+    }
+  ],
+  "prs": [
+    {
+      "approved_head_stale": null,
+      "ci_first_green": null,
+      "ci_first_head": null,
+      "created_at": "2030-01-02T03:00:00Z",
+      "first_review_pass": null,
+      "fix_rounds": null,
+      "merged_at": "2030-01-02T05:00:00Z",
+      "nonstandard_verdict_lines": 0,
+      "post_merge_verdicts": 0,
+      "pr": "acme/widgets#21",
+      "re_reviews": null,
+      "rework": false,
+      "rework_source": "derived",
+      "state": "merged",
+      "structure_note_verdicts": 0,
+      "unparsed_verdict_lines": 0,
+      "verdicts": 0,
+      "verdicts_source": "comments"
+    }
+  ],
+  "schema_version": 1,
+  "status": "complete",
+  "ticket": "acme/widgets#11",
+  "tool_version": "0.5.0",
+  "usage": null,
+  "warnings": []
+}

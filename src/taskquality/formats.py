@@ -278,6 +278,16 @@ def validate_input(input_data: dict, snapshot_ticket: str) -> None:
                     val = item[key]
                     if isinstance(val, bool) or not isinstance(val, int) or val < 0:
                         raise ToolError("input_bad_shape", f"usage item {key} must be a non-negative integer or null: {val!r}")
+            if "weighted_micro_units" in item and item["weighted_micro_units"] is not None:
+                wval = item["weighted_micro_units"]
+                if isinstance(wval, bool) or not isinstance(wval, int) or wval < 0:
+                    raise ToolError("input_bad_shape", "usage item weighted_micro_units must be a non-negative integer or null")
+            # agent is never echoed anywhere: the error names the key only
+            # null counts as absent (PM ruling)
+            if item.get("agent") is not None:
+                agent = item["agent"]
+                if not isinstance(agent, str) or not agent:
+                    raise ToolError("input_bad_shape", "usage item agent must be a non-empty string when present")
 
     if "counters" in input_data and input_data["counters"] is not None:
         if not isinstance(input_data["counters"], dict):
