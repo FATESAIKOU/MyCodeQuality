@@ -39,31 +39,31 @@ def run_tq(*args):
 # C-P1: review line convention, one row of the §1 table in docs/periodic.md per case.
 # Each row: (line, pattern recognizes it, role, verdict class counted in 審查; None = not counted).
 C_P1_ROWS = [
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", True, "審查", "pass"),
-    ("審查：anthropic/claude-sonnet-5-5（pipe a, high） 結論：可以 merge（head 1234567）", True, "審查", "pass"),
-    ("審查：anthropic/claude-sonnet-5-5(結構) 結論：通過（head 1234567）", True, "審查", "pass"),
-    ("審查：anthropic/claude-sonnet-5-5 結論：要修（head 30b3c96）", True, "審查", "fail"),
-    ("審查：google/gemini-4-hydrogen-medium 結論：要退回（head 30b3c96a1b2c3d4e5f60718293a4b5c6d7e8f901）", True, "審查", "fail"),
-    ("審查：anthropic/claude-sonnet-5-5 結論：要修（head 30b3c96） 高 1、中 3，報告見 REPORT-12-review.md", True, "審查", "fail"),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge （head 4cac21d）", True, "審查", "pass"),
-    ("結構審查：anthropic/claude-opus-5-5 結論：通過（head 7c3e45b）", True, "結構審查", None),
-    ("審查:anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5結論：可以 merge（head 4cac21d）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5　結論：可以 merge（head 4cac21d）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge(head 4cac21d)", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4CAC21D）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head: 4cac21d）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d；無高）", True, "審查", "pass"),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（無阻擋項）（head 4cac21d）", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：要修（輕）（head e786beb）", False, None, None),
-    ("審查：google/Gemini 4 Hydrogen (Medium) 結論：可以 merge（head 8521f31）", False, None, None),
-    ("審查（第一輪）：anthropic/claude-sonnet-5-5 結論：要修（head 9a05dc4）", False, None, None),
-    ("**審查**：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", False, None, None),
-    (" 審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", False, None, None),
-    ("審查：google/gemini-4-hydrogen-medium 結論：可以 merge", False, None, None),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以merge（head 4cac21d）", True, "審查", "other"),
-    ("審查：anthropic/claude-sonnet-5-5 結論：可以（head 4cac21d）", True, "審查", "other"),
+    ("審查：vendor/model-x 結論：可以 merge（head 4cac21d）", True, "審查", "pass"),
+    ("審查：vendor/model-x（pipe a, high） 結論：可以 merge（head 1234567）", True, "審查", "pass"),
+    ("審查：vendor/model-x(結構) 結論：通過（head 1234567）", True, "審查", "pass"),
+    ("審查：vendor/model-x 結論：要修（head 30b3c96）", True, "審查", "fail"),
+    ("審查：vendor/model-y 結論：要退回（head 30b3c96a1b2c3d4e5f60718293a4b5c6d7e8f901）", True, "審查", "fail"),
+    ("審查：vendor/model-x 結論：要修（head 30b3c96） 高 1、中 3，報告見 REPORT-12-review.md", True, "審查", "fail"),
+    ("審查：vendor/model-x 結論：可以 merge （head 4cac21d）", True, "審查", "pass"),
+    ("結構審查：vendor/model-z 結論：通過（head 7c3e45b）", True, "結構審查", None),
+    ("審查:vendor/model-x 結論：可以 merge（head 4cac21d）", False, None, None),
+    ("審查：vendor/model-x結論：可以 merge（head 4cac21d）", False, None, None),
+    ("審查：vendor/model-x　結論：可以 merge（head 4cac21d）", False, None, None),
+    ("審查：vendor/model-x 結論：可以 merge(head 4cac21d)", False, None, None),
+    ("審查：vendor/model-x 結論：可以 merge（head 4CAC21D）", False, None, None),
+    ("審查：vendor/model-x 結論：可以 merge（head 4cac21）", False, None, None),
+    ("審查：vendor/model-x 結論：可以 merge（head: 4cac21d）", False, None, None),
+    ("審查：vendor/model-x 結論：可以 merge（head 4cac21d；無高）", True, "審查", "pass"),
+    ("審查：vendor/model-x 結論：可以 merge（無阻擋項）（head 4cac21d）", False, None, None),
+    ("審查：vendor/model-x 結論：要修（輕）（head e786beb）", False, None, None),
+    ("審查：vendor/Model X (Medium) 結論：可以 merge（head 8521f31）", False, None, None),
+    ("審查（第一輪）：vendor/model-x 結論：要修（head 9a05dc4）", False, None, None),
+    ("**審查**：vendor/model-x 結論：可以 merge（head 4cac21d）", False, None, None),
+    (" 審查：vendor/model-x 結論：可以 merge（head 4cac21d）", False, None, None),
+    ("審查：vendor/model-y 結論：可以 merge", False, None, None),
+    ("審查：vendor/model-x 結論：可以merge（head 4cac21d）", True, "審查", "other"),
+    ("審查：vendor/model-x 結論：可以（head 4cac21d）", True, "審查", "other"),
 ]
 
 
@@ -85,6 +85,37 @@ def test_C_P1_review_line_table(row):
         assert verdicts == [], line
     else:
         assert [(v["role"], v["verdict"]) for v in verdicts] == [(role, verdict)], line
+
+
+VECTORS_FILE = Path(__file__).resolve().parent / "vectors" / "review_lines.json"
+
+def test_C_P1_rows_agree_with_vectors():
+    vectors = {v["line"]: v for v in json.loads(VECTORS_FILE.read_text(encoding="utf-8"))["vectors"]}
+    for line, recognized, role, verdict in C_P1_ROWS:
+        assert line in vectors, line
+        v = vectors[line]
+        assert v["parsed"] is recognized, line
+        if recognized:
+            assert v["role"] == role, line
+        counted = v["verdict_class"] if v["counts_as_review"] else None
+        assert counted == verdict, line
+
+
+def _docs_c_p1_lines():
+    """Literal line (backticked, first column) of each data row in the table under `## 1.`."""
+    lines = DOCS_PERIODIC.read_text(encoding="utf-8").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("## 1."))
+    rows = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            rows.append(line)
+    return [re.match(r"\| `(.+?)`", row).group(1) for row in rows[2:]]
+
+
+def test_C_P1_rows_match_docs_table_lines():
+    assert [line for line, *_ in C_P1_ROWS] == _docs_c_p1_lines()
 
 
 # C-P2: §2 table in docs/periodic.md, one row per case. Ticket is acme/widgets#310, PR is in acme/widgets.

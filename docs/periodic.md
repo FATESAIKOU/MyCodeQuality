@@ -6,7 +6,7 @@
 
 ## 1. 每一輪審查結論：PR 留言的第一行
 
-審查行文法與機器可讀測試向量詳見 [docs/review-lines.md](review-lines.md)。
+本節是摘要。正式文法以 [docs/review-lines.md](review-lines.md) 與 `tests/vectors/review_lines.json` 為準；兩者若有不同，以向量檔為準（向量檔由 `tests/test_review_line_vectors.py` 對照實作）。
 
 格式（逐字，`<…>` 換成實際內容）：
 
@@ -25,7 +25,7 @@
   - 通過：`可以 merge`、`通過`
   - 要修：`要修`、`要退回`、`要退回設計`
   - 其他字會被當成 `other`，該 PR 的審查各項（`review_first_pass`、`fix_rounds` 等）會是 `null`（`unrecognized_verdict`）；`re_reviews` 不受影響，仍是數字（實測為 `0`）。報告的 `warnings` 會列出這種情況（`unrecognized_verdict: N …`，不含結論字本身）。
-- 補充說明寫在 `）` **之後**（同一行），或寫在第二行以下。不要寫進括號裡。
+- 補充說明寫在 `）` **之後**（同一行），或寫在第二行以下。不要寫進 head 的括號裡；括號內的補充（`（head 4cac21d；無高）`）會被容忍、照常計入審查，但記入 `nonstandard_verdict_lines`，不算標準寫法。
 - 這一行必須是留言的**第一行**，前面不能有空白或 markdown。
 - 結論與 `（head <7 碼>）` 必須寫在**同一行**（第一行）：只存留言的第一行，結論後面換行才寫的 `（head …）` 看不到，整行會被當成不是審查行（不是「結論字串帶換行」），這一輪就算不到。細節放第二行以後。
 - 每一輪都要貼，包含「要修」那幾輪；head 是該輪審查的 commit。
