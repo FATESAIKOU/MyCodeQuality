@@ -244,11 +244,20 @@ def test_agent_never_appears_in_any_output(tmp_path):
         assert SECRET_AGENT not in proc.stderr
 
 
-def test_agent_only_error_names_key_not_value(tmp_path):
-    proc = _run(tmp_path, [_item("impl", "model-y", agent="")])
+@pytest.mark.parametrize("as_json", [True, False])
+@pytest.mark.parametrize(
+    "bad, secret",
+    [
+        ({"x": "secret-agent-name-2"}, "secret-agent-name-2"),
+        (["secret-agent-name-3"], "secret-agent-name-3"),
+    ],
+)
+def test_agent_only_error_names_key_not_value(tmp_path, bad, secret, as_json):
+    proc = _run(tmp_path, [_item("impl", "model-y", agent=bad)], json_out=as_json)
     _assert_bad_shape(proc)
     assert "agent" in proc.stderr
-    assert SECRET_AGENT not in proc.stderr
+    assert secret not in proc.stdout
+    assert secret not in proc.stderr
 
 
 # --- byte stability ----------------------------------------------------------
@@ -264,6 +273,21 @@ def test_no_usage_and_null_usage_have_no_new_keys(tmp_path):
         assert "weighted" not in proc.stdout
     # the only difference is the existing missing reason (input_missing vs input_null)
     assert absent.stdout.replace("input_missing", "input_null") == null.stdout.replace("input_missing", "input_null")
+
+
+DATA_DIR = Path(__file__).resolve().parent / "data"
+
+
+@pytest.mark.parametrize("case", ["absent", "null"])
+@pytest.mark.parametrize("mode", ["json", "summary"])
+def test_no_usage_matches_main_bytes(tmp_path, case, mode):
+    # expected stdout was captured from main (v0.5.0, 1442e97) with the same synthetic input
+    usage = ABSENT if case == "absent" else None
+    proc = _run(tmp_path, usage, json_out=(mode == "json"))
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stderr == ""
+    expected = (DATA_DIR / f"n10a_baseline_{case}_{mode}.txt").read_bytes()
+    assert proc.stdout.encode("utf-8") == expected
 
 
 def test_usage_without_weighted_adds_only_by_role_model(tmp_path):

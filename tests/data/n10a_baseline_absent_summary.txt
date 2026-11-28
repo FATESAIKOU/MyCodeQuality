@@ -1,0 +1,9 @@
+taskquality 0.5.0 (schema 1)
+ticket acme/widgets#11
+status: complete
+clean: false
+prs: merged=1 open=0 closed_unmerged=0
+review_first_pass: unknown fix_rounds: unknown re_reviews: unknown
+ci_first_green: unknown prs_without_ci: 1
+cycle_seconds: 7200 rework_prs: 0
+missing fields: 12
