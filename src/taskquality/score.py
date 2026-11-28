@@ -591,6 +591,6 @@ def score_ticket(snapshot: dict, input_data: dict | None, config: dict) -> dict:
             snapshot,
             unrecognized_count,
             config,
-            sum(p["unparsed_verdict_lines"] for p in pr_results),
+            metrics["unparsed_verdict_lines"],
         ),
     }

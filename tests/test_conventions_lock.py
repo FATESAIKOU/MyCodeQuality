@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from taskquality.conventions import DEFAULT_CONFIG, extract_verdicts, match_ticket_ref
+from taskquality.conventions import DEFAULT_CONFIG, extract_verdicts_detailed, match_ticket_ref
 
 SNAPSHOT = {
     "kind": "taskquality-snapshot",
@@ -40,6 +40,7 @@ def run_tq(*args):
 # Each row: (line, pattern recognizes it, role, verdict class counted in 審查; None = not counted).
 C_P1_ROWS = [
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", True, "審查", "pass"),
+    ("審查：anthropic/claude-sonnet-5-5（pipe a, high） 結論：可以 merge（head 1234567）", True, "審查", "pass"),
     ("審查：anthropic/claude-sonnet-5-5 結論：要修（head 30b3c96）", True, "審查", "fail"),
     ("審查：google/gemini-4-hydrogen-medium 結論：要退回（head 30b3c96a1b2c3d4e5f60718293a4b5c6d7e8f901）", True, "審查", "fail"),
     ("審查：anthropic/claude-sonnet-5-5 結論：要修（head 30b3c96） 高 1、中 3，報告見 REPORT-12-review.md", True, "審查", "fail"),
@@ -77,7 +78,8 @@ def test_C_P1_review_line_table(row):
         "id": "acme/widgets#21",
         "comments": [{"id": 1, "created_at": "2030-01-02T04:00:00Z", "first_line": line}],
     }
-    _, verdicts = extract_verdicts(pr, None, DEFAULT_CONFIG)
+    info = extract_verdicts_detailed(pr, None, DEFAULT_CONFIG)
+    verdicts = info["verdicts"]
     if verdict is None:
         assert verdicts == [], line
     else:

@@ -128,7 +128,6 @@ def detect_rework(
 
 VERDICT_LINE_PREFIX_RE = re.compile(r"^\S*審查：")
 STRUCTURE_NOTE_MARKERS = ("架構", "結構")
-NONSTANDARD_HEAD_RE = re.compile(r"（head\s+[0-9a-f]{7,40}[；;]")
 
 
 def extract_verdicts_detailed(
@@ -185,8 +184,6 @@ def extract_verdicts_detailed(
                     if VERDICT_LINE_PREFIX_RE.match(line):
                         unparsed_verdict_lines += 1
                     continue
-                if NONSTANDARD_HEAD_RE.search(line):
-                    nonstandard_verdict_lines += 1
                 if any(m.group(g) is None for g in ("role", "model", "verdict", "head")):
                     continue
                 role = m.group("role")
@@ -204,6 +201,9 @@ def extract_verdicts_detailed(
                     else:
                         v_kind = "other"
                     head = m.group("head").lower()
+                    head_end = m.end("head")
+                    if line[head_end : head_end + 1] in ("；", ";"):
+                        nonstandard_verdict_lines += 1
                     V.append({
                         "at": c["created_at"],
                         "source_order": 0,
@@ -253,17 +253,3 @@ def extract_verdicts_detailed(
         "unparsed_verdict_lines": unparsed_verdict_lines,
         "nonstandard_verdict_lines": nonstandard_verdict_lines,
     }
-
-
-def extract_verdicts(
-    pr: dict,
-    input_prs_override: dict | None,
-    config: dict,
-) -> tuple[str, list[dict] | None]:
-    """Extract review verdicts sequence V for a PR.
-
-    Returns (verdicts_source, V_list).
-    If input explicitly provides verdicts as null, V_list is None.
-    """
-    info = extract_verdicts_detailed(pr, input_prs_override, config)
-    return info["source"], info["verdicts"]

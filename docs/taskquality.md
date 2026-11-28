@@ -267,7 +267,7 @@
 ### 提示（`warnings`）
 `warnings` 是只加不改的提示：不影響任何指標、`clean`、`missing` 或 `config_digest`，人看的摘要（不帶 `--json`）會以 `warning: <代碼>` 一行一個印出。字串依字典序排序、去重；沒有觸發時是 `[]`。目前有三種：
 
-- `unparsed_verdict_lines: N verdict-like line(s) did not match verdict_pattern`：工單各 PR 留言中，有 N 筆第一行符合 `^\S*審查：` 但整行不符合 `verdict_pattern`（只看 comments 來源）。留言的實際文字不會出現在提示裡。
+- `unparsed_verdict_lines: N verdict-like line(s) did not match verdict_pattern`：工單已合併 PR（merged PR）留言中，有 N 筆第一行符合 `^\S*審查：` 但整行不符合 `verdict_pattern`（與 metrics 的加總範圍一致，只看 comments 來源）。留言的實際文字不會出現在提示裡。
 - `unrecognized_verdict: N verdict line(s) …`：工單各 PR 的審查行中，有 N 筆結論字既不在 `pass_verdicts` 也不在 `fail_verdicts`（即 `other`）。這些審查行已被認得（格式正確），只是結論字不在清單裡，所以審查各項會是 `null`（`unrecognized_verdict`）。**結論字的實際文字不會出現在提示裡**。處理：若那是團隊慣用的通過字（例如只寫「可以」），在自己的 config 的 `pass_verdicts` 加上它；若是要修的字，加進 `fail_verdicts`。不要靠改內建預設。
 - `ci_workflows_unmatched: <名稱>`：config 的 `ci_workflows` 有一項，與快照中任何 CI run 的 workflow 名稱都不相等（通常是改名，或寫錯）。這一項因此對不上任何 run，PR 會靜靜地變成 `no_ci_runs`。快照裡一筆 CI run 都沒有時不提示（那是 `no_ci_runs` 本來的訊息）；`ci_workflows` 是 `null` 時也不提示。若只差大小寫，訊息改為 `ci_workflows_unmatched: <名稱> (case differs from an existing workflow name)`，並不列出實際名稱。比對範圍是整個快照的 CI run（包括被排除的 PR 與 `run_attempt` 不是 1 的 run）：警告只抓「名稱在整個快照裡都對不到」；工單本身沒有符合的 run 時，仍由 `missing` 的 `no_ci_runs` 反映。處理：把 config 的名字改成 GitHub Actions 顯示的 workflow `name:` 一字不差的寫法。
 

@@ -2581,7 +2581,7 @@ def test_validation_unhashable_and_type_checks_across_shapes(tmp_path):
 
 def test_extract_verdicts_optional_named_group(tmp_path):
     """Optional named group in verdict_pattern can be None without dropping verdict (issue #24)."""
-    from taskquality.conventions import extract_verdicts
+    from taskquality.conventions import extract_verdicts_detailed
 
     cfg = json.loads(run_tq("defaults").stdout)
     cfg["verdict_pattern"] = (
@@ -2604,7 +2604,8 @@ def test_extract_verdicts_optional_named_group(tmp_path):
     data1 = json.loads(r1.stdout)
     assert data1["prs"][0]["verdicts"] == 1
 
-    src1, v1 = extract_verdicts(snap["prs"][0], None, cfg)
+    info1 = extract_verdicts_detailed(snap["prs"][0], None, cfg)
+    src1, v1 = info1["source"], info1["verdicts"]
     assert src1 == "comments"
     assert len(v1) == 1
     assert v1[0]["verdict"] == "pass"
@@ -2623,7 +2624,8 @@ def test_extract_verdicts_optional_named_group(tmp_path):
     data2 = json.loads(r2.stdout)
     assert data2["prs"][0]["verdicts"] == 1
 
-    src2, v2 = extract_verdicts(snap["prs"][0], None, cfg)
+    info2 = extract_verdicts_detailed(snap["prs"][0], None, cfg)
+    src2, v2 = info2["source"], info2["verdicts"]
     assert src2 == "comments"
     assert len(v2) == 1
     assert v2[0]["verdict"] == "pass"

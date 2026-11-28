@@ -345,3 +345,204 @@ def test_decision_addition2_head_note_tolerance():
     assert rep["metrics"]["nonstandard_verdict_lines"] == 2
     assert rep["metrics"]["unparsed_verdict_lines"] == 1
 
+
+def test_m1_builtin_config_note_with_half_width_space():
+    """M-1: note containing half-width space is parsed under built-in config.
+
+    Mutating note group to [^）\\s]* must fail this test.
+    """
+    line = "審查：vendor/model-x（pipe a, high） 結論：可以 merge（head 1234567）"
+    pat = re.compile(DEFAULT_CONFIG["verdict_pattern"])
+    m = pat.match(line)
+    assert m is not None, line
+    assert m.group("role") == "審查"
+    assert m.group("model") == "vendor/model-x"
+    assert m.group("note") == "pipe a, high"
+    assert m.group("verdict") == "可以 merge"
+    assert m.group("head") == "1234567"
+
+    pr = make_pr(
+        21,
+        comments=[comment(1, "2030-01-02T04:00:00Z", line)],
+    )
+    rep = score_ticket(snapshot(pr), None, DEFAULT_CONFIG)
+    pr_res = rep["prs"][0]
+    assert pr_res["verdicts"] == 1
+    assert pr_res["unparsed_verdict_lines"] == 0
+    assert rep["metrics"]["unparsed_verdict_lines"] == 0
+    assert rep["warnings"] == []
+
+
+def test_m6_metrics_unparsed_verdict_lines_only_counts_merged_prs():
+    """M-6 (L-1): metrics and warning for unparsed_verdict_lines only count merged PRs.
+
+    Open and closed-unmerged PRs do not contribute to metrics or warning unparsed counts.
+    """
+    # Merged PR: 1 valid verdict line, 0 unparsed
+    pr_merged = make_pr(
+        21,
+        comments=[
+            comment(1, "2030-01-02T04:00:00Z", "審查：vendor/model-x 結論：可以 merge（head 1111111）"),
+        ],
+    )
+    # Open PR: 1 unparsed line
+    pr_open = make_pr(
+        22,
+        state="open",
+        merged_at=None,
+        comments=[
+            comment(2, "2030-01-02T04:00:00Z", "審查：vendor/model-x (custom note) 結論：可以 merge（head 1111111）"),
+        ],
+    )
+    # Closed unmerged PR: 1 unparsed line
+    pr_closed = make_pr(
+        23,
+        state="closed",
+        merged_at=None,
+        comments=[
+            comment(3, "2030-01-02T04:00:00Z", "審查：vendor/model-x (custom note 2) 結論：可以 merge（head 1111111）"),
+        ],
+    )
+    snap = snapshot(pr_merged, pr_open, pr_closed)
+    rep = score_ticket(snap, None, DEFAULT_CONFIG)
+
+    assert rep["prs"][0]["unparsed_verdict_lines"] == 0
+    assert rep["prs"][1]["unparsed_verdict_lines"] == 1
+    assert rep["prs"][2]["unparsed_verdict_lines"] == 1
+
+    # metrics and warning only count merged PRs
+    assert rep["metrics"]["unparsed_verdict_lines"] == 0
+    assert rep["warnings"] == []
+
+
+def test_m7_structure_review_prefix_unparsed_verdict_line():
+    """M-7: comment first line starting with 結構審查： but not matching verdict_pattern
+
+    is counted in unparsed_verdict_lines (VERDICT_LINE_PREFIX_RE is ^\\S*審查：).
+    """
+    pr = make_pr(
+        21,
+        comments=[
+            comment(1, "2030-01-02T04:00:00Z", "結構審查：vendor/model-x (broken format) 結論：通過（head 1111111）"),
+        ],
+    )
+    snap = snapshot(pr)
+    rep = score_ticket(snap, None, DEFAULT_CONFIG)
+
+    pr_res = rep["prs"][0]
+    assert pr_res["unparsed_verdict_lines"] == 1
+    assert rep["metrics"]["unparsed_verdict_lines"] == 1
+    assert rep["warnings"] == [
+        "unparsed_verdict_lines: 1 verdict-like line(s) did not match verdict_pattern"
+    ]
+
+
+def test_m15_empty_note_not_counted_as_structure_note():
+    """M-15: empty note （） matches pattern and is not treated as a structure note."""
+    line = "審查：vendor/model-x（） 結論：可以 merge（head 1234567）"
+    pat = re.compile(DEFAULT_CONFIG["verdict_pattern"])
+    m = pat.match(line)
+    assert m is not None, line
+    assert m.group("note") == ""
+
+    pr = make_pr(
+        21,
+        comments=[comment(1, "2030-01-02T04:00:00Z", line)],
+    )
+    rep = score_ticket(snapshot(pr), None, DEFAULT_CONFIG)
+    pr_res = rep["prs"][0]
+    assert pr_res["structure_note_verdicts"] == 0
+    assert pr_res["verdicts"] == 1
+    assert rep["metrics"]["structure_note_verdicts"] == 0
+
+
+def test_l2_nonstandard_head_checks_only_after_head_and_in_v():
+    """L-2: nonstandard_verdict_lines checks semicolon immediately after head group,
+
+    and only counts on verdicts that actually enter V.
+    """
+    # 1. Fake head paren inside note group, but standard head
+    line1 = "審查：vendor/model-x（（head 1234567；x） 結論：通過（head 1234567）"
+    # 2. 結構審查 has head with semicolon, but role is not in review_roles -> not in V
+    line2 = "結構審查：vendor/model-z 結論：通過（head 1234567；說明）"
+    # 3. Structure note excluded from V -> nonstandard not counted
+    line3 = "審查：vendor/model-x（架構師結構審） 結論：通過（head 1234567；說明）"
+    # 4. Standard review with head semicolon enters V -> nonstandard counted
+    line4 = "審查：vendor/model-x 結論：通過（head 1234567；說明）"
+
+    pr = make_pr(
+        21,
+        comments=[
+            comment(1, "2030-01-02T04:00:00Z", line1),
+            comment(2, "2030-01-02T04:05:00Z", line2),
+            comment(3, "2030-01-02T04:10:00Z", line3),
+            comment(4, "2030-01-02T04:15:00Z", line4),
+        ],
+    )
+    rep = score_ticket(snapshot(pr), None, DEFAULT_CONFIG)
+    pr_res = rep["prs"][0]
+    # line1 enters V (standard head -> nonstd=0)
+    # line2 does not enter V (role not in review_roles)
+    # line3 does not enter V (structure note)
+    # line4 enters V (nonstd=1)
+    assert pr_res["verdicts"] == 2
+    assert pr_res["structure_note_verdicts"] == 1
+    assert pr_res["nonstandard_verdict_lines"] == 1
+    assert rep["metrics"]["nonstandard_verdict_lines"] == 1
+
+
+def test_l4_decision3_reviews_source_and_merged_open_scope():
+    """L-4: decision 3 with reviews source, and merged + open PRs existing simultaneously."""
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
+    cfg["verdict_sources"] = ["comments", "reviews"]
+
+    pr_merged = make_pr(
+        21,
+        merged_at="2030-01-02T05:00:00Z",
+        reviews=[
+            {"id": 1, "submitted_at": "2030-01-02T04:00:00Z", "state": "CHANGES_REQUESTED", "commit_id": "0000000"},
+            {"id": 2, "submitted_at": "2030-01-02T05:00:00Z", "state": "APPROVED", "commit_id": "1111111"},
+            {"id": 3, "submitted_at": "2030-01-02T05:00:02Z", "state": "APPROVED", "commit_id": "1111111"},
+        ],
+        comments=[
+            # 1 unparsed line in merged PR
+            comment(10, "2030-01-02T04:30:00Z", "審查：vendor/model-x (broken) 結論：通過（head 1111111）"),
+        ],
+    )
+    pr_open = make_pr(
+        22,
+        state="open",
+        merged_at=None,
+        reviews=[
+            {"id": 4, "submitted_at": "2030-01-02T06:00:00Z", "state": "APPROVED", "commit_id": "1111111"},
+        ],
+        comments=[
+            # 1 unparsed line in open PR
+            comment(11, "2030-01-02T06:30:00Z", "審查：vendor/model-x (broken open) 結論：通過（head 1111111）"),
+        ],
+    )
+
+    snap = snapshot(pr_merged, pr_open)
+    rep = score_ticket(snap, None, cfg)
+
+    # Merged PR: review 1 & 2 <= merged_at count; review 3 is post_merge
+    res_m = rep["prs"][0]
+    assert res_m["verdicts"] == 2
+    assert res_m["post_merge_verdicts"] == 1
+    assert res_m["fix_rounds"] == 1
+    assert res_m["unparsed_verdict_lines"] == 1
+
+    # Open PR: review 4 counts, post_merge is 0
+    res_o = rep["prs"][1]
+    assert res_o["verdicts"] == 1
+    assert res_o["post_merge_verdicts"] == 0
+    assert res_o["unparsed_verdict_lines"] == 1
+
+    # Metrics and warnings only count merged PR
+    assert rep["metrics"]["post_merge_verdicts"] == 1
+    assert rep["metrics"]["unparsed_verdict_lines"] == 1
+    assert rep["warnings"] == [
+        "unparsed_verdict_lines: 1 verdict-like line(s) did not match verdict_pattern"
+    ]
+
+

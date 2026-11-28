@@ -274,7 +274,7 @@ taskquality defaults                       # 印出內建的 config（§3.5）�
   "ticket_ref_keywords": ["closes", "close", "closed", "fixes", "fix", "fixed", "resolves", "resolve", "resolved", "refs", "ref"],
   "verdict_sources": ["comments"],
   "github_review_role": "審查",
-  "verdict_pattern": "^(?P<role>\\S*審查)：(?P<model>\\S+) 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})）",
+  "verdict_pattern": "^(?P<role>\\S*審查)：(?P<model>\\S+) 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})）",  // 已由 #66 改為 ^(?P<role>\S*審查)：(?P<model>[^\s（）]+)(?:（(?P<note>[^）]*)）)? 結論：(?P<verdict>[^（]+)（head (?P<head>[0-9a-f]{7,40})(?:[；;][^）]*)?）（見 docs/taskquality.md）
   "review_roles": ["審查"],
   "pass_verdicts": ["可以 merge", "通過"],
   "fail_verdicts": ["要修", "要退回", "要退回設計"],
