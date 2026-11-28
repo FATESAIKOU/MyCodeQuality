@@ -41,6 +41,7 @@ def run_tq(*args):
 C_P1_ROWS = [
     ("審查：anthropic/claude-sonnet-5-5 結論：可以 merge（head 4cac21d）", True, "審查", "pass"),
     ("審查：anthropic/claude-sonnet-5-5（pipe a, high） 結論：可以 merge（head 1234567）", True, "審查", "pass"),
+    ("審查：anthropic/claude-sonnet-5-5(結構) 結論：通過（head 1234567）", True, "審查", "pass"),
     ("審查：anthropic/claude-sonnet-5-5 結論：要修（head 30b3c96）", True, "審查", "fail"),
     ("審查：google/gemini-4-hydrogen-medium 結論：要退回（head 30b3c96a1b2c3d4e5f60718293a4b5c6d7e8f901）", True, "審查", "fail"),
     ("審查：anthropic/claude-sonnet-5-5 結論：要修（head 30b3c96） 高 1、中 3，報告見 REPORT-12-review.md", True, "審查", "fail"),
