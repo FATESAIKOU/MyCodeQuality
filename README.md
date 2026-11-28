@@ -29,8 +29,15 @@ The workflow checks out the full history (`fetch-depth: 0`; a shallow clone is a
 
 `taskquality fetch` writes a ticket snapshot (including `ticket_labels`, the ticket's labeled/unlabeled events, no actors); `taskquality score` turns it into metrics. Config v2 adds two optional keys: `started_label` (start the cycle at the first `labeled` event of that label) and `ci_required` (`false` stops requiring CI for `clean`). A config with `schema_version: 1` that contains either key is rejected with `config_bad_shape`, by design. Review line parsing isolates post-merge verdicts and structure notes, and warns on unparsed verdict-like lines. Details: [docs/taskquality.md](docs/taskquality.md), [docs/review-lines.md](docs/review-lines.md).
 
-### Release note（草稿）
-內建 `verdict_pattern` 改變（模型後可接一個全形括號註記），內建 `config_digest` 換新值，新舊報告的 `config_digest` 不可直接比；使用自訂 config 的使用方 pattern 不會自動更新。
+### Release notes
+
+#### 0.5.0
+
+- Built-in `verdict_pattern` now accepts one full-width parenthesised note after the model (whitespace allowed) and a `；`/`;` remark after the head. The built-in `config_digest` changes, so 0.4.x and 0.5.0 reports are not directly comparable.
+- Merged PRs only count verdicts at or before `merged_at`. New keys `post_merge_verdicts`, `unparsed_verdict_lines`, `structure_note_verdicts` and `nonstandard_verdict_lines` appear at PR level and as merged-PR sums in metrics, together with the `unparsed_verdict_lines` warning.
+- A verdict line whose note mentions 架構／結構 counts as a structure review (legacy form; use `結構審查：`).
+- Custom configs keep their own pattern; it is not updated automatically.
+- Grammar: [docs/review-lines.md](docs/review-lines.md). Vectors: [tests/vectors/review_lines.json](https://raw.githubusercontent.com/FATESAIKOU/MyCodeQuality/v0.5.0/tests/vectors/review_lines.json).
 
 ## Optional gate (Q1)
 
